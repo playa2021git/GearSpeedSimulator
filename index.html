@@ -884,19 +884,29 @@
           el.speedHead.innerHTML = showRatioDetails
             ? '<tr><th>歯車</th><th>歯数</th><th>倍率</th><th>回転数</th></tr>'
             : '<tr><th>歯車</th><th>歯数</th><th>回転数</th></tr>';
-          el.speedBody.innerHTML = teeth.map((tooth, i) => `
-            <tr>
-              <td>${GEAR_NAMES[i]} ${i === 0 ? '駆動' : i === finalIndex ? '被動' : '中間'}<br><span class="small-note">${directionText(rpms[i])}</span></td>
-              <td>${tooth}</td>
-              ${showRatioDetails ? `<td>${formatSignedRatio(ratios[i])}</td>` : ''}
-              <td>${formatRPM(Math.abs(rpms[i]))} rpm</td>
-            </tr>
-          `).join('');
+          if (state.compoundMode && state.gearCount === 3) {
+            const totalRatio = ratios[2];
+            el.speedBody.innerHTML = `
+              <tr><td>A 駆動歯車<br><span class="small-note">${directionText(rpms[0])}</span></td><td>${state.teeth[0]}</td>${showRatioDetails ? '<td>1倍</td>' : ''}<td>${formatRPM(Math.abs(rpms[0]))} rpm</td></tr>
+              <tr><td>B1 中央大歯車<br><span class="small-note">${directionText(rpms[1])}</span></td><td>${state.compoundTeeth[1]}</td>${showRatioDetails ? `<td>${formatSignedRatio(ratios[1])}</td>` : ''}<td>${formatRPM(Math.abs(rpms[1]))} rpm</td></tr>
+              <tr><td>B2 中央小歯車<br><span class="small-note">${directionText(rpms[1])}</span></td><td>${state.teeth[1]}</td>${showRatioDetails ? '<td>B1と同じ軸</td>' : ''}<td>${formatRPM(Math.abs(rpms[1]))} rpm</td></tr>
+              <tr><td>C 従動歯車<br><span class="small-note">${directionText(rpms[2])}</span></td><td>${state.teeth[2]}</td>${showRatioDetails ? `<td>総合 ${formatSignedRatio(totalRatio)}</td>` : ''}<td>${formatRPM(Math.abs(rpms[2]))} rpm</td></tr>
+            `;
+          } else {
+            el.speedBody.innerHTML = teeth.map((tooth, i) => `
+              <tr>
+                <td>${GEAR_NAMES[i]} ${i === 0 ? '駆動' : i === finalIndex ? '被動' : '中間'}<br><span class="small-note">${directionText(rpms[i])}</span></td>
+                <td>${tooth}</td>
+                ${showRatioDetails ? `<td>${formatSignedRatio(ratios[i])}</td>` : ''}
+                <td>${formatRPM(Math.abs(rpms[i]))} rpm</td>
+              </tr>
+            `).join('');
+          }
           el.ratioBox.style.display = showRatioDetails ? 'grid' : 'none';
           el.formulaBox.style.display = showRatioDetails ? 'block' : 'none';
           el.infoHints.style.display = showRatioDetails ? 'block' : 'none';
           el.ratioBox.innerHTML = `<strong>最終出力：${formatSignedRatio(finalRatio)}</strong><div>回転方向：${finalRatio >= 0 ? 'Aと同じ向き' : 'Aと逆向き'}</div>`;
-          const connSummary = state.connections.slice(0, state.gearCount - 1).map((c, i) => state.compoundMode ? `${GEAR_NAMES[i]}下段${state.teeth[i]}歯 → ${GEAR_NAMES[i + 1]}上段${state.compoundTeeth[i + 1]}歯` : `${GEAR_NAMES[i]}→${GEAR_NAMES[i + 1]}：${c === 'mesh' ? '噛み合い/逆' : 'チェーン/同'}`).join('　');
+          const connSummary = state.connections.slice(0, state.gearCount - 1).map((c, i) => state.compoundMode ? `${GEAR_NAMES[i]}${i === 0 ? '' : '下段'}${state.teeth[i]}歯 → ${GEAR_NAMES[i + 1]}${i + 1 === state.gearCount - 1 ? '' : '上段'}${i + 1 === state.gearCount - 1 ? state.teeth[i + 1] : state.compoundTeeth[i + 1]}歯` : `${GEAR_NAMES[i]}→${GEAR_NAMES[i + 1]}：${c === 'mesh' ? '噛み合い/逆' : 'チェーン/同'}`).join('　');
           el.formulaBox.innerHTML = `<strong>${state.compoundMode ? '二段歯車の倍率' : '接続方式'}</strong><br>${connSummary}`;
           draw();
         }
@@ -916,7 +926,8 @@
           for (let i = 0; i < state.gearCount - 1; i++) {
             const direction = state.connections[i] === 'mesh' ? -1 : 1;
             const driveTeeth = state.teeth[i];
-            const drivenTeeth = state.compoundMode ? state.compoundTeeth[i + 1] : state.teeth[i + 1];
+            const isCompoundFinal = state.compoundMode && i + 1 === state.gearCount - 1;
+            const drivenTeeth = state.compoundMode && !isCompoundFinal ? state.compoundTeeth[i + 1] : state.teeth[i + 1];
             ratios[i + 1] = ratios[i] * direction * driveTeeth / drivenTeeth;
           }
           return { ratios };
@@ -1117,6 +1128,13 @@
             <span class="value"><span id="teeth${index}Val">${state.teeth[index]}</span> 歯</span>
           </div>
           <input id="teeth${index}" data-teeth-index="${index}" type="range" min="10" max="100" step="10" value="${state.teeth[index]}">
+          <div class="control" data-compound-row="${index}">
+            <div class="control-head">
+              <label for="compoundTeeth${index}">${name}上段：前から受ける歯数</label>
+              <span class="value"><span id="compoundTeeth${index}Val">${state.compoundTeeth[index]}</span> 歯</span>
+            </div>
+            <input id="compoundTeeth${index}" data-compound-teeth-index="${index}" type="range" min="10" max="100" step="10" value="${state.compoundTeeth[index]}">
+          </div>
         </div>
       `).join('');
 
@@ -1223,7 +1241,8 @@
       for (let i = 0; i < conns.length; i++) {
         const direction = conns[i] === 'mesh' ? -1 : 1;
         const driveTeeth = teeth[i];
-        const drivenTeeth = state.compoundMode ? state.compoundTeeth[i + 1] : teeth[i + 1];
+        const isCompoundFinal = state.compoundMode && i + 1 === state.gearCount - 1;
+        const drivenTeeth = state.compoundMode && !isCompoundFinal ? state.compoundTeeth[i + 1] : teeth[i + 1];
         if (conns[i] === 'mesh') meshFlipCount += 1;
         ratios[i + 1] = ratios[i] * direction * driveTeeth / drivenTeeth;
 
@@ -1865,14 +1884,24 @@
       el.speedHead.innerHTML = showRatioDetails
         ? '<tr><th>歯車</th><th>歯数</th><th>倍率</th><th>回転数</th></tr>'
         : '<tr><th>歯車</th><th>歯数</th><th>回転数</th></tr>';
-      el.speedBody.innerHTML = teeth.map((tooth, i) => `
-        <tr>
-          <td>${GEAR_NAMES[i]} ${i === 0 ? '駆動' : i === finalIndex ? '被動' : '中間'}<br><span class="small-note">${directionText(rpms[i])}</span></td>
-          <td>${tooth}</td>
-          ${showRatioDetails ? `<td>${formatSignedRatio(ratios[i])}</td>` : ''}
-          <td>${formatRPM(Math.abs(rpms[i]))} rpm</td>
-        </tr>
-      `).join('');
+      if (state.compoundMode && state.gearCount === 3) {
+        const totalRatio = ratios[2];
+        el.speedBody.innerHTML = `
+          <tr><td>A 駆動歯車<br><span class="small-note">${directionText(rpms[0])}</span></td><td>${state.teeth[0]}</td>${showRatioDetails ? '<td>1倍</td>' : ''}<td>${formatRPM(Math.abs(rpms[0]))} rpm</td></tr>
+          <tr><td>B1 中央大歯車<br><span class="small-note">${directionText(rpms[1])}</span></td><td>${state.compoundTeeth[1]}</td>${showRatioDetails ? `<td>${formatSignedRatio(ratios[1])}</td>` : ''}<td>${formatRPM(Math.abs(rpms[1]))} rpm</td></tr>
+          <tr><td>B2 中央小歯車<br><span class="small-note">${directionText(rpms[1])}</span></td><td>${state.teeth[1]}</td>${showRatioDetails ? '<td>B1と同じ軸</td>' : ''}<td>${formatRPM(Math.abs(rpms[1]))} rpm</td></tr>
+          <tr><td>C 従動歯車<br><span class="small-note">${directionText(rpms[2])}</span></td><td>${state.teeth[2]}</td>${showRatioDetails ? `<td>総合 ${formatSignedRatio(totalRatio)}</td>` : ''}<td>${formatRPM(Math.abs(rpms[2]))} rpm</td></tr>
+        `;
+      } else {
+        el.speedBody.innerHTML = teeth.map((tooth, i) => `
+          <tr>
+            <td>${GEAR_NAMES[i]} ${i === 0 ? '駆動' : i === finalIndex ? '被動' : '中間'}<br><span class="small-note">${directionText(rpms[i])}</span></td>
+            <td>${tooth}</td>
+            ${showRatioDetails ? `<td>${formatSignedRatio(ratios[i])}</td>` : ''}
+            <td>${formatRPM(Math.abs(rpms[i]))} rpm</td>
+          </tr>
+        `).join('');
+      }
 
       const maxVal = Math.max(1, finalAbs);
       const inputWidth = Math.max(5, (1 / maxVal) * 100);
@@ -1886,13 +1915,13 @@
         <div class="bar-row"><span>${GEAR_NAMES[finalIndex]}出力</span><div class="bar-track"><div class="bar-fill" style="width:${outputWidth}%"></div></div><span>${formatRatioNumber(finalAbs)}倍</span></div>
       `;
 
-      const connSummary = conns.map((c, i) => state.compoundMode ? `${GEAR_NAMES[i]}下段${state.teeth[i]}歯 → ${GEAR_NAMES[i + 1]}上段${state.compoundTeeth[i + 1]}歯` : `${GEAR_NAMES[i]}→${GEAR_NAMES[i + 1]}：${c === 'mesh' ? '噛み合い/逆' : 'チェーン/同'}`).join('　');
+      const connSummary = conns.map((c, i) => state.compoundMode ? `${GEAR_NAMES[i]}${i === 0 ? '' : '下段'}${state.teeth[i]}歯 → ${GEAR_NAMES[i + 1]}${i + 1 === state.gearCount - 1 ? '' : '上段'}${i + 1 === state.gearCount - 1 ? state.teeth[i + 1] : state.compoundTeeth[i + 1]}歯` : `${GEAR_NAMES[i]}→${GEAR_NAMES[i + 1]}：${c === 'mesh' ? '噛み合い/逆' : 'チェーン/同'}`).join('　');
       el.formulaBox.style.display = showRatioDetails ? 'block' : 'none';
       el.infoHints.style.display = showRatioDetails ? 'block' : 'none';
       el.formulaBox.innerHTML = state.compoundMode ? `
         <strong>二段歯車の関係式</strong><br>
-        2〜4枚目では上段の被動歯車と下段歯車が同じ回転数で回り、その下段歯車が次の軸の上段歯車を回します。<br>
-        各段では <code>次のrpm = 前のrpm × 前の下段歯数 ÷ 次の上段歯数</code>。<br>
+        中央軸ではB1（上段・前から受ける歯車）とB2（下段・次へ送る歯車）が固定され、同じ回転数・同じ向きで回ります。<br>
+        2段では <code>rpmC = rpmA × (A歯数 ÷ B1歯数) × (B2歯数 ÷ C歯数)</code>。<br>
         この構成：${connSummary}<br>
         倍率が段ごとに掛け算されるため、段数を増やすほど大きく増速・減速できます。最終出力はAと<strong>${finalRatio >= 0 ? '同じ向き' : '逆向き'}</strong>です。
       ` : `
