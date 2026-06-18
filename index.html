@@ -508,8 +508,7 @@
     }
   </script>
   <script type="module">
-    import * as THREE from 'three';
-    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    const { THREE, OrbitControls } = await loadThreeDependencies();
 
     const TAU = Math.PI * 2;
     const MODULE_SIZE = 0.17;
@@ -519,6 +518,50 @@
     const ROLES = ['駆動輪', '被動輪', '中間輪', '最終被動輪'];
     const GEAR_COLORS = [0xfbbf24, 0x38bdf8, 0x34d399, 0xf472b6];
     const ACCENT_COLORS = [0x7c2d12, 0x075985, 0x065f46, 0x831843];
+
+    async function loadThreeDependencies() {
+      const sources = [
+        {
+          name: 'jsDelivr',
+          three: 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js',
+          controls: 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js',
+        },
+        {
+          name: 'esm.sh',
+          three: 'https://esm.sh/three@0.160.0',
+          controls: 'https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js?deps=three@0.160.0',
+        },
+      ];
+      const errors = [];
+
+      for (const source of sources) {
+        try {
+          const [threeModule, controlsModule] = await Promise.all([
+            importWithTimeout(source.three),
+            importWithTimeout(source.controls),
+          ]);
+          return { THREE: threeModule, OrbitControls: controlsModule.OrbitControls };
+        } catch (error) {
+          errors.push(`${source.name}: ${error.message}`);
+        }
+      }
+
+      const status = document.getElementById('loadStatus');
+      if (status) {
+        status.innerHTML = '<strong>歯車を表示できませんでした。</strong><br>Three.js CDNを複数試しましたが読み込めませんでした。学校ネットワークやブラウザの制限で外部CDNがブロックされている可能性があります。';
+      }
+      console.error('Three.js load failed:', errors);
+      throw new Error(`Unable to load Three.js dependencies. ${errors.join(' / ')}`);
+    }
+
+    function importWithTimeout(url, timeoutMs = 3500) {
+      return Promise.race([
+        import(url),
+        new Promise((_, reject) => {
+          setTimeout(() => reject(new Error(`Timed out loading ${url}`)), timeoutMs);
+        }),
+      ]);
+    }
 
     const el = {
       scene: document.getElementById('scene'),
@@ -1249,6 +1292,64 @@
       const bottom = Math.min(a.bottom + padding, b.bottom + padding);
       if (right <= left || bottom <= top) return 0;
       return (right - left) * (bottom - top);
+    }
+
+    function findReadableLabelPosition(item, preferredX, preferredY, placedRects) {
+      const width = Math.max(1, item.element.offsetWidth);
+      const height = Math.max(1, item.element.offsetHeight);
+      const margin = 8;
+      const safeLeft = margin;
+      const safeTop = margin;
+      const safeRight = window.innerWidth - margin;
+      const safeBottom = window.innerHeight - margin;
+      const offsets = item.type === 'ratio'
+        ? [
+            [0, 0], [0, -34], [0, -68], [0, -102],
+            [-44, -34], [44, -34], [-88, -68], [88, -68],
+            [-44, 34], [44, 34], [0, 34], [0, 68],
+          ]
+        : [
+            [0, 0], [0, 34], [0, -34],
+            [-48, 0], [48, 0], [-48, 34], [48, 34],
+          ];
+
+      let best = null;
+      let bestPenalty = Number.POSITIVE_INFINITY;
+      for (const [dx, dy] of offsets) {
+        const x = THREE.MathUtils.clamp(preferredX + dx, safeLeft + width / 2, safeRight - width / 2);
+        const y = THREE.MathUtils.clamp(preferredY + dy, safeTop + height / 2, safeBottom - height / 2);
+        const rect = makeLabelRect(x, y, width, height);
+        const overlap = placedRects.reduce((sum, placed) => sum + overlapArea(rect, placed, margin), 0);
+        const penalty = overlap * 1000 + Math.abs(dx) + Math.abs(dy) * 1.2;
+        if (overlap === 0) return { x, y, rect };
+        if (penalty < bestPenalty) {
+          bestPenalty = penalty;
+          best = { x, y, rect };
+        }
+      }
+      return best;
+    }
+
+    function makeLabelRect(centerX, centerY, width, height) {
+      return {
+        left: centerX - width / 2,
+        right: centerX + width / 2,
+        top: centerY - height / 2,
+        bottom: centerY + height / 2,
+      };
+    }
+
+    function overlapArea(a, b, padding = 0) {
+      const left = Math.max(a.left - padding, b.left - padding);
+      const right = Math.min(a.right + padding, b.right + padding);
+      const top = Math.max(a.top - padding, b.top - padding);
+      const bottom = Math.min(a.bottom + padding, b.bottom + padding);
+      if (right <= left || bottom <= top) return 0;
+      return (right - left) * (bottom - top);
+    }
+
+    function shouldShowFloatingRatioLabels() {
+      return el.showRatios.checked && state.gearCount <= 2;
     }
 
     function findReadableLabelPosition(item, preferredX, preferredY, placedRects) {
