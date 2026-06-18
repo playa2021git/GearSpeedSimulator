@@ -1,0 +1,1460 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Three.js 歯車・チェーン回転速度シミュレータ</title>
+  <style>
+    :root {
+      --panel: rgba(15, 23, 42, 0.80);
+      --panel-soft: rgba(255, 255, 255, 0.08);
+      --line: rgba(255, 255, 255, 0.18);
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent2: #fbbf24;
+      --green: #86efac;
+      --shadow: 0 20px 64px rgba(0, 0, 0, 0.28);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans JP", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 74% 22%, rgba(56, 189, 248, 0.23), transparent 30%),
+        radial-gradient(circle at 28% 80%, rgba(251, 191, 36, 0.16), transparent 34%),
+        linear-gradient(135deg, #0f172a 0%, #111827 48%, #020617 100%);
+    }
+
+    #scene, #labelLayer {
+      position: fixed;
+      inset: 0;
+    }
+
+    #labelLayer {
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    .panel {
+      position: fixed;
+      left: 18px;
+      top: 18px;
+      width: min(430px, calc(100vw - 36px));
+      max-height: calc(100vh - 36px);
+      overflow-y: auto;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+      z-index: 5;
+    }
+
+    .title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .title-mark {
+      width: 38px;
+      height: 38px;
+      border-radius: 13px;
+      display: grid;
+      place-items: center;
+      font-weight: 900;
+      color: #0f172a;
+      background: linear-gradient(135deg, #67e8f9, #fbbf24);
+      box-shadow: inset 0 0 13px rgba(255, 255, 255, 0.45);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.35;
+      letter-spacing: 0.02em;
+    }
+
+    .lead {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.65;
+    }
+
+    .section {
+      border-top: 1px solid var(--line);
+      margin-top: 14px;
+      padding-top: 14px;
+    }
+
+    .button-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .mode-button, button.action {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.07);
+      color: var(--text);
+      padding: 10px 10px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: 0.15s ease;
+    }
+
+    .mode-button.active {
+      border-color: rgba(56, 189, 248, 0.75);
+      background: rgba(56, 189, 248, 0.19);
+      box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.12) inset;
+    }
+
+    .mode-button:disabled {
+      opacity: 0.38;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    .control { margin: 12px 0; }
+    .control-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 5px;
+    }
+
+    label, .control-title {
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .value {
+      color: #bae6fd;
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    select {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      background: rgba(255, 255, 255, 0.08);
+      color: #e5e7eb;
+      padding: 8px 10px;
+      font-weight: 800;
+      outline: none;
+    }
+
+    select option {
+      color: #0f172a;
+    }
+
+    .small-note {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.55;
+      margin-top: 4px;
+    }
+
+    .gear-controls {
+      display: grid;
+      gap: 4px;
+    }
+
+    .connection-row {
+      display: grid;
+      grid-template-columns: 94px 1fr;
+      align-items: center;
+      gap: 8px;
+      margin: 8px 0;
+    }
+
+    .connection-name {
+      color: #dbeafe;
+      font-size: 12px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    button.action.primary {
+      border: 0;
+      color: #07111f;
+      background: linear-gradient(135deg, #67e8f9, #fbbf24);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.20);
+    }
+
+    .toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: #cbd5e1;
+      margin-top: 10px;
+    }
+
+    .readout {
+      display: grid;
+      gap: 9px;
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 10px;
+    }
+
+    .speed-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .speed-table th, .speed-table td {
+      padding: 6px 4px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.11);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .speed-table tr:last-child td { border-bottom: 0; }
+    .speed-table th { color: #cbd5e1; font-size: 11px; }
+    .speed-table td:last-child { text-align: right; }
+
+    .ratio-box {
+      display: grid;
+      gap: 8px;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: 54px 1fr 62px;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: #cbd5e1;
+    }
+
+    .bar-track {
+      height: 12px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.12);
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: 999px;
+      min-width: 5%;
+      background: linear-gradient(90deg, #38bdf8, #fbbf24);
+    }
+
+    .formula code {
+      color: #fde68a;
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 6px;
+      padding: 1px 5px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(56, 189, 248, 0.14);
+      border: 1px solid rgba(56, 189, 248, 0.24);
+      color: #bae6fd;
+      font-size: 11px;
+      margin: 3px 3px 0 0;
+    }
+
+    .legend {
+      position: fixed;
+      top: 18px;
+      right: 18px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+      max-width: min(700px, calc(100vw - 480px));
+      z-index: 5;
+      pointer-events: none;
+    }
+
+    .legend-item {
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.80);
+      color: #0f172a;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
+      font-size: 12px;
+      font-weight: 800;
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.42);
+    }
+
+    .hud {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      width: min(390px, calc(100vw - 36px));
+      background: rgba(255, 255, 255, 0.80);
+      color: #0f172a;
+      border: 1px solid rgba(255, 255, 255, 0.36);
+      border-radius: 18px;
+      padding: 14px 16px;
+      backdrop-filter: blur(16px);
+      box-shadow: var(--shadow);
+      font-size: 12px;
+      line-height: 1.6;
+      z-index: 5;
+    }
+
+    .hud strong { font-size: 13px; }
+    .hud kbd {
+      display: inline-block;
+      border: 1px solid rgba(15, 23, 42, 0.2);
+      border-bottom-width: 2px;
+      border-radius: 6px;
+      padding: 0 5px;
+      background: rgba(255, 255, 255, 0.65);
+      font-family: inherit;
+    }
+
+    .gear-label, .ratio-label {
+      position: fixed;
+      transform: translate(-50%, -50%);
+      border: 1px solid rgba(15, 23, 42, 0.15);
+      box-shadow: 0 10px 28px rgba(15, 23, 42, 0.18);
+      backdrop-filter: blur(12px);
+      white-space: pre-line;
+      text-align: center;
+      text-shadow: 0 1px 0 rgba(255,255,255,0.62);
+    }
+
+    .gear-label {
+      min-width: 146px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.90);
+      color: #0f172a;
+      font-size: 16px;
+      font-weight: 900;
+      line-height: 1.36;
+    }
+
+    .gear-label .sub {
+      display: block;
+      margin-top: 2px;
+      font-size: 13px;
+      font-weight: 800;
+      color: #334155;
+    }
+
+    .ratio-label {
+      min-width: 150px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.88);
+      color: #fef3c7;
+      border-color: rgba(253, 230, 138, 0.30);
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .load-status {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: min(560px, calc(100vw - 48px));
+      padding: 18px 22px;
+      border-radius: 18px;
+      background: rgba(15, 23, 42, 0.88);
+      color: #e5e7eb;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      box-shadow: var(--shadow);
+      text-align: center;
+      line-height: 1.7;
+      z-index: 8;
+      backdrop-filter: blur(18px);
+      pointer-events: none;
+    }
+
+    .load-status strong { color: #bae6fd; }
+
+    @media (max-width: 920px) {
+      .panel {
+        left: 12px;
+        top: 12px;
+        width: calc(100vw - 24px);
+        max-height: 58vh;
+      }
+      .hud, .legend { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div id="scene" aria-label="3D歯車シミュレータ"></div>
+  <div id="labelLayer" aria-hidden="true"></div>
+  <div id="loadStatus" class="load-status"><strong>Three.jsを読み込み中です。</strong><br>数秒たっても歯車が出ない場合は、CDN読み込みがブロックされています。</div>
+
+  <aside class="panel">
+    <div class="title">
+      <div class="title-mark">⚙</div>
+      <h1>歯車・チェーン回転速度シミュレータ<br>Three.js 教材プロトタイプ</h1>
+    </div>
+    <p class="lead">
+      平歯車を2〜4枚まで並べられます。歯車同士の噛み合いは逆回転、チェーン駆動は2枚だけで同じ向きに回ることを比較できます。
+    </p>
+
+    <section class="section">
+      <div class="control-title">表示する歯車の数</div>
+      <div class="button-row" role="group" aria-label="歯車の数">
+        <button class="mode-button" data-count="2" type="button">2枚</button>
+        <button class="mode-button" data-count="3" type="button">3枚</button>
+        <button class="mode-button" data-count="4" type="button">4枚</button>
+      </div>
+      <div class="small-note">初期表示は2枚です。チェーン駆動を選ぶと、安全のため2枚構成に固定します。</div>
+    </section>
+
+    <section class="section">
+      <div class="control">
+        <div class="control-head">
+          <label for="rpm0">入力：駆動輪Aの回転数</label>
+          <span class="value"><span id="rpm0Val">6</span> rpm</span>
+        </div>
+        <input id="rpm0" type="range" min="-10" max="10" step="1" value="6">
+        <div class="small-note">最大は ±10 rpm。1 rpmずつ変更できます。正の値：反時計回り、負の値：時計回り。</div>
+      </div>
+
+      <label class="toggle"><input id="fineTeeth" type="checkbox"> 歯数を1歯ずつ細かく変更する</label>
+      <div class="small-note">通常は10歯きざみです。チェックONで10〜100歯を1歯ずつ変更できます。</div>
+      <div id="gearControls" class="gear-controls"></div>
+    </section>
+
+    <section class="section">
+      <div class="control-title">接続方法</div>
+      <div id="connectionControls"></div>
+      <div class="small-note">噛み合い：相手は逆回転。チェーン：相手は同じ向き。どちらも速さの大きさは「歯数の比」で決まります。</div>
+    </section>
+
+    <section class="section">
+      <div class="buttons">
+        <button id="playPause" class="action primary" type="button">一時停止</button>
+        <button id="reset" class="action" type="button">角度リセット</button>
+      </div>
+      <label class="toggle"><input id="showRatios" type="checkbox" checked> 速度比の視覚表示を出す</label>
+      <label class="toggle"><input id="showEdges" type="checkbox" checked> 歯形の輪郭線を表示する</label>
+      <label class="toggle"><input id="showPitch" type="checkbox" checked> ピッチ円・基礎円を表示する</label>
+    </section>
+
+    <section class="section readout">
+      <div class="card">
+        <table class="speed-table" aria-label="回転数一覧">
+          <thead><tr><th>歯車</th><th>歯数</th><th>倍率</th><th>回転数</th></tr></thead>
+          <tbody id="speedBody"></tbody>
+        </table>
+      </div>
+      <div class="card ratio-box" id="ratioBox"></div>
+      <div class="card formula" id="formulaBox"></div>
+      <div class="card">
+        <span class="badge">噛み合い＝逆回転</span>
+        <span class="badge">チェーン＝同方向</span>
+        <span class="badge">歯数が多いほど遅い</span>
+        <span class="badge">中間歯車は倍率を打ち消す</span>
+      </div>
+    </section>
+  </aside>
+
+  <div class="legend" id="legend"></div>
+
+  <div class="hud">
+    <strong>授業用メモ</strong><br>
+    歯形は20°圧力角のインボリュート曲線を使った教材用近似モデルです。チェーンはローラーとリンクを簡易表示し、駆動輪と被動輪が同じ向きに回ることを観察できます。<br>
+    操作：<kbd>ドラッグ</kbd>視点回転 / <kbd>ホイール</kbd>拡大縮小
+  </div>
+
+  <script>
+    window.__GEAR_SIM_LOADED = false;
+    window.addEventListener('error', () => {
+      const status = document.getElementById('loadStatus');
+      if (!status || window.__GEAR_SIM_LOADED) return;
+      status.innerHTML = '<strong>歯車を表示できませんでした。</strong><br>Three.jsの読み込みに失敗しています。学校ネットワークやブラウザの制限でCDNがブロックされている可能性があります。';
+    });
+    setTimeout(() => {
+      const status = document.getElementById('loadStatus');
+      if (status && !window.__GEAR_SIM_LOADED) {
+        status.innerHTML = '<strong>まだ歯車を読み込み中です。</strong><br>長く続く場合は、Three.js CDNがブロックされています。';
+      }
+    }, 4000);
+  </script>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    const TAU = Math.PI * 2;
+    const MODULE_SIZE = 0.17;
+    const THICKNESS = 0.70;
+    const PRESSURE_ANGLE = THREE.MathUtils.degToRad(20);
+    const GEAR_NAMES = ['A', 'B', 'C', 'D'];
+    const ROLES = ['駆動輪', '被動輪', '中間輪', '最終被動輪'];
+    const GEAR_COLORS = [0xfbbf24, 0x38bdf8, 0x34d399, 0xf472b6];
+    const ACCENT_COLORS = [0x7c2d12, 0x075985, 0x065f46, 0x831843];
+
+    const el = {
+      scene: document.getElementById('scene'),
+      labelLayer: document.getElementById('labelLayer'),
+      loadStatus: document.getElementById('loadStatus'),
+      gearControls: document.getElementById('gearControls'),
+      connectionControls: document.getElementById('connectionControls'),
+      fineTeeth: document.getElementById('fineTeeth'),
+      rpm0: document.getElementById('rpm0'),
+      rpm0Val: document.getElementById('rpm0Val'),
+      playPause: document.getElementById('playPause'),
+      reset: document.getElementById('reset'),
+      showRatios: document.getElementById('showRatios'),
+      showEdges: document.getElementById('showEdges'),
+      showPitch: document.getElementById('showPitch'),
+      speedBody: document.getElementById('speedBody'),
+      ratioBox: document.getElementById('ratioBox'),
+      formulaBox: document.getElementById('formulaBox'),
+      legend: document.getElementById('legend'),
+      countButtons: Array.from(document.querySelectorAll('[data-count]')),
+    };
+
+    const state = {
+      gearCount: 2,
+      teeth: [20, 40, 30, 60],
+      connections: ['mesh', 'mesh', 'mesh'],
+      running: true,
+      driveAngle: 0,
+      lastTime: performance.now(),
+      gears: [],
+      labels: [],
+      edgeObjects: [],
+      pitchObjects: [],
+      chainObjects: [],
+    };
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 800);
+    camera.position.set(0, -4, 34);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.08;
+    el.scene.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.minDistance = 6;
+    controls.maxDistance = 160;
+
+    const world = new THREE.Group();
+    scene.add(world);
+
+    setupLights();
+    buildControlDom();
+    rebuild();
+    animate();
+    window.__GEAR_SIM_LOADED = true;
+    if (el.loadStatus) el.loadStatus.style.display = 'none';
+
+    function setupLights() {
+      scene.add(new THREE.HemisphereLight(0xe0f2fe, 0x334155, 1.45));
+
+      const key = new THREE.DirectionalLight(0xffffff, 3.1);
+      key.position.set(-12, -14, 24);
+      key.castShadow = true;
+      key.shadow.mapSize.set(2048, 2048);
+      key.shadow.camera.near = 1;
+      key.shadow.camera.far = 100;
+      key.shadow.camera.left = -50;
+      key.shadow.camera.right = 50;
+      key.shadow.camera.top = 30;
+      key.shadow.camera.bottom = -30;
+      scene.add(key);
+
+      const rim = new THREE.DirectionalLight(0x93c5fd, 1.35);
+      rim.position.set(16, 12, 20);
+      scene.add(rim);
+    }
+
+    function buildControlDom() {
+      el.gearControls.innerHTML = GEAR_NAMES.map((name, index) => `
+        <div class="control gear-control" data-gear-row="${index}">
+          <div class="control-head">
+            <label for="teeth${index}">${name}：${index === 0 ? '駆動輪' : index === 3 ? '最終被動輪' : '歯車'}の歯数</label>
+            <span class="value"><span id="teeth${index}Val">${state.teeth[index]}</span> 歯</span>
+          </div>
+          <input id="teeth${index}" data-teeth-index="${index}" type="range" min="10" max="100" step="10" value="${state.teeth[index]}">
+        </div>
+      `).join('');
+
+      el.connectionControls.innerHTML = [0, 1, 2].map((index) => `
+        <div class="connection-row" data-conn-row="${index}">
+          <div class="connection-name">${GEAR_NAMES[index]} → ${GEAR_NAMES[index + 1]}</div>
+          <select id="conn${index}" data-conn-index="${index}" aria-label="${GEAR_NAMES[index]}から${GEAR_NAMES[index + 1]}への接続">
+            <option value="mesh">噛み合い：逆回転</option>
+            <option value="chain">チェーン：同じ向き</option>
+          </select>
+        </div>
+      `).join('');
+
+      document.querySelectorAll('[data-teeth-index]').forEach((input) => {
+        input.addEventListener('input', () => {
+          const index = Number(input.dataset.teethIndex);
+          state.teeth[index] = normalizeTeeth(Number(input.value));
+          rebuild();
+        });
+      });
+
+      document.querySelectorAll('[data-conn-index]').forEach((select) => {
+        select.value = state.connections[Number(select.dataset.connIndex)];
+        select.addEventListener('change', () => {
+          const index = Number(select.dataset.connIndex);
+          if (select.value === 'chain') {
+            state.gearCount = 2;
+            state.connections = ['chain', 'mesh', 'mesh'];
+          } else {
+            state.connections[index] = 'mesh';
+          }
+          rebuild();
+        });
+      });
+
+      el.countButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+          if (button.disabled) return;
+          state.gearCount = Number(button.dataset.count);
+          if (state.gearCount > 2) state.connections = ['mesh', 'mesh', 'mesh'];
+          rebuild();
+        });
+      });
+
+      el.fineTeeth.addEventListener('change', () => {
+        for (let i = 0; i < state.teeth.length; i++) state.teeth[i] = normalizeTeeth(state.teeth[i]);
+        rebuild();
+      });
+    }
+
+    function activeTeeth() {
+      return state.teeth.slice(0, state.gearCount);
+    }
+
+    function activeConnections() {
+      return state.connections.slice(0, state.gearCount - 1);
+    }
+
+    function readRpm() {
+      return Number(el.rpm0.value);
+    }
+
+    function pitchRadius(teeth) {
+      return teeth * MODULE_SIZE / 2;
+    }
+
+    function normalizeTeeth(value) {
+      const clamped = THREE.MathUtils.clamp(Math.round(value), 10, 100);
+      if (el.fineTeeth && el.fineTeeth.checked) return clamped;
+      return THREE.MathUtils.clamp(Math.round(clamped / 10) * 10, 10, 100);
+    }
+
+    function isChainDrive() {
+      return state.gearCount === 2 && state.connections[0] === 'chain';
+    }
+
+    function computeRatios() {
+      const teeth = activeTeeth();
+      const conns = activeConnections();
+      const ratios = [1];
+      const phases = [0];
+      let meshFlipCount = 0;
+
+      for (let i = 0; i < conns.length; i++) {
+        const direction = conns[i] === 'mesh' ? -1 : 1;
+        if (conns[i] === 'mesh') meshFlipCount += 1;
+        ratios[i + 1] = ratios[i] * direction * teeth[i] / teeth[i + 1];
+
+        if (conns[i] === 'mesh') {
+          phases[i + 1] = -phases[i] * teeth[i] / teeth[i + 1] + Math.PI - Math.PI / teeth[i + 1];
+        } else {
+          phases[i + 1] = phases[i] * teeth[i] / teeth[i + 1];
+        }
+      }
+
+      return { ratios, phases, meshFlipCount };
+    }
+
+    function computeRpms() {
+      const rpm0 = readRpm();
+      const { ratios } = computeRatios();
+      return ratios.map((r) => rpm0 * r);
+    }
+
+    function rebuild() {
+      if (state.connections[0] === 'chain') {
+        state.gearCount = 2;
+        state.connections = ['chain', 'mesh', 'mesh'];
+      }
+      for (let i = 0; i < state.teeth.length; i++) state.teeth[i] = normalizeTeeth(state.teeth[i]);
+      el.rpm0.value = String(Math.round(Number(el.rpm0.value)));
+      disposeWorld();
+      state.gears = [];
+      state.labels = [];
+      state.edgeObjects = [];
+      state.pitchObjects = [];
+      state.chainObjects = [];
+
+      updateControlVisibility();
+
+      const plate = makeBackPlate();
+      world.add(plate);
+
+      const teeth = activeTeeth();
+      const conns = activeConnections();
+      const radii = teeth.map(pitchRadius);
+      const positions = [];
+      let x = 0;
+      positions.push(new THREE.Vector3(x, 0, 0));
+      for (let i = 0; i < conns.length; i++) {
+        const gap = conns[i] === 'chain' ? Math.max(3.2, Math.min(radii[i], radii[i + 1]) * 0.95) : 0;
+        x += radii[i] + radii[i + 1] + gap;
+        positions.push(new THREE.Vector3(x, 0, 0));
+      }
+
+      const minX = Math.min(...positions.map((p, i) => p.x - radii[i] - 1.4));
+      const maxX = Math.max(...positions.map((p, i) => p.x + radii[i] + 1.4));
+      const shift = -(minX + maxX) / 2;
+      positions.forEach((p) => { p.x += shift; });
+
+      for (let i = 0; i < state.gearCount; i++) {
+        const gear = createGear({
+          name: GEAR_NAMES[i],
+          teeth: teeth[i],
+          color: GEAR_COLORS[i],
+          accent: ACCENT_COLORS[i],
+        });
+        gear.position.copy(positions[i]);
+        world.add(gear);
+        state.gears.push(gear);
+
+        const labelYOffset = radii[i] + 2.0 + (i % 2 === 0 ? 0.8 : -0.2);
+        const labelY = i % 2 === 0 ? labelYOffset : -labelYOffset;
+        addDomLabel({
+          type: 'gear',
+          key: i,
+          className: 'gear-label',
+          position: new THREE.Vector3(positions[i].x, labelY, 2.15),
+        });
+      }
+
+      for (let i = 0; i < conns.length; i++) {
+        if (conns[i] === 'mesh') {
+          addContactLine(
+            new THREE.Vector3(positions[i].x, 0, 0.74),
+            new THREE.Vector3(positions[i + 1].x, 0, 0.74),
+            0x93c5fd
+          );
+        } else {
+          const chain = createChainLoop(positions[i], radii[i], positions[i + 1], radii[i + 1]);
+          world.add(chain);
+          state.chainObjects.push(chain);
+        }
+
+        const ratioPos = new THREE.Vector3(
+          (positions[i].x + positions[i + 1].x) / 2,
+          Math.max(radii[i], radii[i + 1]) + 2.2,
+          2.35
+        );
+        addDomLabel({
+          type: 'ratio',
+          key: i,
+          className: 'ratio-label',
+          position: ratioPos,
+        });
+      }
+
+      const maxR = Math.max(...radii);
+      fitCamera({ minX: Math.min(...positions.map((p, i) => p.x - radii[i] - 2.5)), maxX: Math.max(...positions.map((p, i) => p.x + radii[i] + 2.5)), minY: -maxR - 4.2, maxY: maxR + 5.2 });
+
+      applyVisibilityToggles();
+      updateReadout();
+      applyGearAngles();
+    }
+
+    function disposeWorld() {
+      el.labelLayer.innerHTML = '';
+      while (world.children.length) {
+        const child = world.children.pop();
+        child.traverse((obj) => {
+          if (obj.geometry) obj.geometry.dispose();
+          if (obj.material) {
+            if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
+            else obj.material.dispose();
+          }
+        });
+      }
+    }
+
+    function makeBackPlate() {
+      const group = new THREE.Group();
+      const plateGeo = new THREE.PlaneGeometry(160, 90);
+      const plateMat = new THREE.ShadowMaterial({ opacity: 0.18 });
+      const plate = new THREE.Mesh(plateGeo, plateMat);
+      plate.position.z = -3.8;
+      plate.receiveShadow = true;
+      group.add(plate);
+
+      const grid = new THREE.GridHelper(110, 44, 0x64748b, 0x334155);
+      grid.rotation.x = Math.PI / 2;
+      grid.position.z = -3.74;
+      grid.material.transparent = true;
+      grid.material.opacity = 0.12;
+      group.add(grid);
+      return group;
+    }
+
+    function gearRadii(teeth) {
+      const pitch = pitchRadius(teeth);
+      const base = pitch * Math.cos(PRESSURE_ANGLE);
+      const outer = pitch + MODULE_SIZE;
+      const root = Math.max(0.16, pitch - MODULE_SIZE * 1.25);
+      return { pitch, base, outer, root };
+    }
+
+    function involuteFunction(alpha) {
+      return Math.tan(alpha) - alpha;
+    }
+
+    function involuteHalfAngleAtRadius(radius, teeth, baseRadius) {
+      const pitchHalfAngle = Math.PI / (2 * teeth);
+      const invPressure = involuteFunction(PRESSURE_ANGLE);
+      const clamped = Math.min(1, Math.max(-1, baseRadius / radius));
+      const alpha = Math.acos(clamped);
+      return Math.max(0.004, pitchHalfAngle + invPressure - involuteFunction(alpha));
+    }
+
+    function createInvoluteGearShape(teeth) {
+      const { pitch, base, outer, root } = gearRadii(teeth);
+      const step = TAU / teeth;
+      const pitchHalfAngle = Math.PI / (2 * teeth);
+      const invPressure = involuteFunction(PRESSURE_ANGLE);
+      const baseHalfAngle = pitchHalfAngle + invPressure;
+      const flankSamples = 6;
+      const topSamples = 3;
+      const rootSamples = 4;
+      const points = [];
+      const addPoint = (r, a) => points.push(radialPoint(r, a));
+
+      for (let i = 0; i < teeth; i++) {
+        const center = i * step;
+        addPoint(root, center - baseHalfAngle);
+        if (base > root) addPoint(base, center - baseHalfAngle);
+        const startR = Math.max(base, root);
+
+        for (let j = 1; j <= flankSamples; j++) {
+          const r = startR + (outer - startR) * (j / flankSamples);
+          const half = involuteHalfAngleAtRadius(r, teeth, base);
+          addPoint(r, center - half);
+        }
+
+        const outerHalf = involuteHalfAngleAtRadius(outer, teeth, base);
+        for (let j = 1; j <= topSamples; j++) {
+          const a = center - outerHalf + (outerHalf * 2) * (j / topSamples);
+          addPoint(outer, a);
+        }
+
+        for (let j = flankSamples; j >= 1; j--) {
+          const r = startR + (outer - startR) * (j / flankSamples);
+          const half = involuteHalfAngleAtRadius(r, teeth, base);
+          addPoint(r, center + half);
+        }
+        if (base > root) addPoint(base, center + baseHalfAngle);
+        addPoint(root, center + baseHalfAngle);
+
+        const nextLeft = center + step - baseHalfAngle;
+        for (let j = 1; j <= rootSamples; j++) {
+          const a = center + baseHalfAngle + (nextLeft - (center + baseHalfAngle)) * (j / rootSamples);
+          addPoint(root, a);
+        }
+      }
+
+      const shape = new THREE.Shape();
+      shape.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) shape.lineTo(points[i].x, points[i].y);
+      shape.closePath();
+      return { shape, radii: { pitch, base, outer, root } };
+    }
+
+    function createGear({ name, teeth, color, accent }) {
+      const group = new THREE.Group();
+      const { shape, radii } = createInvoluteGearShape(teeth);
+      group.userData.name = name;
+      group.userData.teeth = teeth;
+      group.userData.pitchRadius = radii.pitch;
+
+      const boreR = Math.min(Math.max(0.20, radii.root * 0.13), Math.max(0.18, radii.root * 0.38));
+      const centerHole = new THREE.Path();
+      centerHole.absarc(0, 0, boreR, 0, TAU, true);
+      shape.holes.push(centerHole);
+
+      if (radii.root > 1.35) {
+        const holes = radii.root > 4.0 ? 6 : 4;
+        const orbit = radii.root * 0.56;
+        const holeR = Math.min(Math.max(0.13, radii.root * 0.082), 0.38);
+        for (let i = 0; i < holes; i++) {
+          const a = TAU * i / holes + (TAU / teeth) * 0.37;
+          const p = radialPoint(orbit, a);
+          const hole = new THREE.Path();
+          hole.absarc(p.x, p.y, holeR, 0, TAU, true);
+          shape.holes.push(hole);
+        }
+      }
+
+      const gearGeo = new THREE.ExtrudeGeometry(shape, {
+        depth: THICKNESS,
+        bevelEnabled: true,
+        bevelSegments: 2,
+        bevelSize: 0.025,
+        bevelThickness: 0.035,
+        curveSegments: 14,
+        steps: 1,
+      });
+      gearGeo.center();
+      gearGeo.computeVertexNormals();
+
+      const gear = new THREE.Mesh(gearGeo, materialSet(color));
+      gear.castShadow = true;
+      gear.receiveShadow = true;
+      group.add(gear);
+
+      const edges = new THREE.LineSegments(
+        new THREE.EdgesGeometry(gearGeo, 18),
+        new THREE.LineBasicMaterial({ color: 0x0f172a, transparent: true, opacity: 0.42 })
+      );
+      group.add(edges);
+      state.edgeObjects.push(edges);
+
+      const pitchLine = makeCircleLine(radii.pitch, 0xffffff, 0.38);
+      pitchLine.position.z = THICKNESS / 2 + 0.07;
+      group.add(pitchLine);
+      state.pitchObjects.push(pitchLine);
+
+      const baseLine = makeCircleLine(radii.base, 0x0f172a, 0.18);
+      baseLine.position.z = THICKNESS / 2 + 0.075;
+      group.add(baseLine);
+      state.pitchObjects.push(baseLine);
+
+      const hubGeo = new THREE.CylinderGeometry(boreR * 2.2, boreR * 2.2, THICKNESS + 0.20, 56);
+      const hub = new THREE.Mesh(hubGeo, materialSet(accent, 0.72, 0.23));
+      hub.rotation.x = Math.PI / 2;
+      hub.castShadow = true;
+      hub.receiveShadow = true;
+      group.add(hub);
+
+      const shaftGeo = new THREE.CylinderGeometry(boreR * 0.55, boreR * 0.55, THICKNESS + 0.54, 40);
+      const shaft = new THREE.Mesh(shaftGeo, materialSet(0xe5e7eb, 0.9, 0.18));
+      shaft.rotation.x = Math.PI / 2;
+      shaft.castShadow = true;
+      shaft.receiveShadow = true;
+      group.add(shaft);
+
+      group.add(makeRotationMarker(Math.min(radii.pitch * 0.72, radii.outer * 0.72), THICKNESS / 2 + 0.105));
+      return group;
+    }
+
+    function radialPoint(r, a) {
+      return new THREE.Vector2(Math.cos(a) * r, Math.sin(a) * r);
+    }
+
+    function materialSet(color, metalness = 0.62, roughness = 0.28) {
+      return new THREE.MeshStandardMaterial({ color, metalness, roughness, envMapIntensity: 0.85 });
+    }
+
+    function makeCircleLine(radius, color, opacity) {
+      const pts = [];
+      for (let i = 0; i <= 180; i++) {
+        const a = TAU * i / 180;
+        pts.push(Math.cos(a) * radius, Math.sin(a) * radius, 0);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+      return new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity }));
+    }
+
+    function makeRotationMarker(radius, z) {
+      const group = new THREE.Group();
+      const dotGeo = new THREE.SphereGeometry(0.16, 20, 10);
+      const dot = new THREE.Mesh(dotGeo, new THREE.MeshBasicMaterial({ color: 0xef4444 }));
+      dot.position.set(radius, 0, z);
+      group.add(dot);
+
+      const barGeo = new THREE.BoxGeometry(Math.max(0.35, radius * 0.78), 0.045, 0.045);
+      const bar = new THREE.Mesh(barGeo, new THREE.MeshBasicMaterial({ color: 0x111827, transparent: true, opacity: 0.82 }));
+      bar.position.set(radius * 0.39, 0, z - 0.02);
+      group.add(bar);
+      return group;
+    }
+
+    function addContactLine(a, b, color) {
+      const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
+      const mat = new THREE.LineDashedMaterial({ color, dashSize: 0.24, gapSize: 0.16, transparent: true, opacity: 0.72 });
+      const line = new THREE.Line(geo, mat);
+      line.computeLineDistances();
+      world.add(line);
+    }
+
+    function createChainLoop(p1, r1, p2, r2) {
+      const group = new THREE.Group();
+      const linkPitch = Math.PI * MODULE_SIZE;
+      const chainRadius1 = r1 + 0.06;
+      const chainRadius2 = r2 + 0.06;
+      const z = THICKNESS / 2 + 0.38;
+      const path = makeChainPath(p1, chainRadius1, p2, chainRadius2, z);
+      const guideMat = new THREE.LineBasicMaterial({ color: 0x1e293b, transparent: true, opacity: 0.34 });
+
+      const guidePoints = [];
+      const guideCount = 260;
+      for (let i = 0; i <= guideCount; i++) {
+        const sample = pointOnChainPath(path, path.length * i / guideCount);
+        guidePoints.push(sample.position);
+      }
+      const guide = new THREE.Line(new THREE.BufferGeometry().setFromPoints(guidePoints), guideMat);
+      group.add(guide);
+
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0x0f172a, transparent: true, opacity: 0.18 });
+      const ring1 = new THREE.Mesh(new THREE.TorusGeometry(chainRadius1, 0.018, 8, 120), ringMat);
+      ring1.position.set(p1.x, p1.y, z - 0.08);
+      group.add(ring1);
+      const ring2 = new THREE.Mesh(new THREE.TorusGeometry(chainRadius2, 0.018, 8, 120), ringMat);
+      ring2.position.set(p2.x, p2.y, z - 0.08);
+      group.add(ring2);
+
+      const linkCount = Math.min(320, Math.max(18, Math.round(path.length / linkPitch)));
+      const realPitch = path.length / linkCount;
+      const links = [];
+      for (let i = 0; i < linkCount; i++) {
+        const link = createChainLink(realPitch, i);
+        group.add(link);
+        links.push(link);
+      }
+      group.userData = { path, links, linkPitch: realPitch, driveRadius: chainRadius1 };
+      updateChainLoop(group, 0);
+      return group;
+    }
+
+    function makeChainPath(p1, r1, p2, r2, z) {
+      const c1 = new THREE.Vector2(p1.x, p1.y);
+      const c2 = new THREE.Vector2(p2.x, p2.y);
+      const dVec = new THREE.Vector2().subVectors(c2, c1);
+      const d = Math.max(dVec.length(), Math.abs(r1 - r2) + 0.001);
+      const baseAngle = Math.atan2(dVec.y, dVec.x);
+      const phi = Math.acos(THREE.MathUtils.clamp((r1 - r2) / d, -0.98, 0.98));
+      const topA = baseAngle + phi;
+      const topB = baseAngle - phi;
+      const p1Top = vecOnCircle(c1, r1, topA, z);
+      const p2Top = vecOnCircle(c2, r2, topA, z);
+      const p2Bottom = vecOnCircle(c2, r2, topB, z);
+      const p1Bottom = vecOnCircle(c1, r1, topB, z);
+      const topLen = p1Top.distanceTo(p2Top);
+      const rightArcLen = r2 * (topA - topB);
+      const bottomLen = p2Bottom.distanceTo(p1Bottom);
+      const leftArcLen = r1 * (TAU - (topA - topB));
+      const length = topLen + rightArcLen + bottomLen + leftArcLen;
+      return { c1, c2, r1, r2, z, topA, topB, p1Top, p2Top, p2Bottom, p1Bottom, topLen, rightArcLen, bottomLen, leftArcLen, length };
+    }
+
+    function vecOnCircle(center, radius, angle, z) {
+      return new THREE.Vector3(center.x + Math.cos(angle) * radius, center.y + Math.sin(angle) * radius, z);
+    }
+
+    function pointOnChainPath(path, distance) {
+      let s = ((distance % path.length) + path.length) % path.length;
+      if (s <= path.topLen) {
+        const t = path.topLen === 0 ? 0 : s / path.topLen;
+        const position = new THREE.Vector3().lerpVectors(path.p1Top, path.p2Top, t);
+        const dir = new THREE.Vector3().subVectors(path.p2Top, path.p1Top);
+        return { position, angle: Math.atan2(dir.y, dir.x) };
+      }
+      s -= path.topLen;
+
+      if (s <= path.rightArcLen) {
+        const a = path.topA - s / path.r2;
+        return { position: vecOnCircle(path.c2, path.r2, a, path.z), angle: a - Math.PI / 2 };
+      }
+      s -= path.rightArcLen;
+
+      if (s <= path.bottomLen) {
+        const t = path.bottomLen === 0 ? 0 : s / path.bottomLen;
+        const position = new THREE.Vector3().lerpVectors(path.p2Bottom, path.p1Bottom, t);
+        const dir = new THREE.Vector3().subVectors(path.p1Bottom, path.p2Bottom);
+        return { position, angle: Math.atan2(dir.y, dir.x) };
+      }
+      s -= path.bottomLen;
+
+      const a = path.topB - s / path.r1;
+      return { position: vecOnCircle(path.c1, path.r1, a, path.z), angle: a - Math.PI / 2 };
+    }
+
+    function createChainLink(pitch, index) {
+      const group = new THREE.Group();
+      const plateMat = materialSet(index % 2 === 0 ? 0x475569 : 0x64748b, 0.78, 0.24);
+      const rollerMat = materialSet(0xd1d5db, 0.92, 0.16);
+      const pinMat = materialSet(0x111827, 0.72, 0.22);
+      const length = Math.max(0.30, pitch * 0.82);
+      const sideGap = 0.18;
+      const plateGeo = new THREE.BoxGeometry(length, 0.055, 0.085);
+
+      const upper = new THREE.Mesh(plateGeo, plateMat);
+      upper.position.y = sideGap;
+      upper.castShadow = true;
+      group.add(upper);
+
+      const lower = new THREE.Mesh(plateGeo, plateMat);
+      lower.position.y = -sideGap;
+      lower.castShadow = true;
+      group.add(lower);
+
+      const rollerGeo = new THREE.CylinderGeometry(0.095, 0.095, sideGap * 2.25, 20);
+      const roller = new THREE.Mesh(rollerGeo, rollerMat);
+      roller.castShadow = true;
+      group.add(roller);
+
+      const pinGeo = new THREE.CylinderGeometry(0.035, 0.035, sideGap * 2.52, 12);
+      const pinA = new THREE.Mesh(pinGeo, pinMat);
+      pinA.position.x = -length * 0.42;
+      group.add(pinA);
+      const pinB = new THREE.Mesh(pinGeo, pinMat);
+      pinB.position.x = length * 0.42;
+      group.add(pinB);
+      return group;
+    }
+
+    function updateChainLoop(chain, travel) {
+      const { path, links, linkPitch } = chain.userData;
+      links.forEach((link, i) => {
+        const sample = pointOnChainPath(path, i * linkPitch - travel);
+        link.position.copy(sample.position);
+        link.rotation.z = sample.angle;
+      });
+    }
+
+    function addDomLabel({ type, key, className, position }) {
+      const div = document.createElement('div');
+      div.className = className;
+      el.labelLayer.appendChild(div);
+      const item = { type, key, position, element: div };
+      state.labels.push(item);
+      updateOneLabelText(item);
+    }
+
+    function updateOneLabelText(item) {
+      const teeth = activeTeeth();
+      const rpms = computeRpms();
+      const ratios = computeRatios().ratios;
+      const conns = activeConnections();
+
+      if (item.type === 'gear') {
+        const i = item.key;
+        const role = i === 0 ? '駆動輪' : i === state.gearCount - 1 ? '被動輪' : '中間輪';
+        item.element.innerHTML = `${GEAR_NAMES[i]} ${role}<span class="sub">${teeth[i]}歯 / ${formatRPM(Math.abs(rpms[i]))} rpm</span><span class="sub">${directionText(rpms[i])}</span>`;
+        return;
+      }
+
+      const i = item.key;
+      const sign = conns[i] === 'mesh' ? '逆回転' : '同じ向き';
+      const connText = conns[i] === 'mesh' ? '噛み合い' : 'チェーン';
+      item.element.textContent = `${connText}：${sign}\n× ${ratioFractionText(teeth[i], teeth[i + 1])}`;
+      item.element.style.display = el.showRatios.checked ? 'block' : 'none';
+    }
+
+    function updateDomLabelTexts() {
+      state.labels.forEach(updateOneLabelText);
+    }
+
+    function updateDomLabels() {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const projected = new THREE.Vector3();
+      state.labels.forEach((item) => {
+        if (item.type === 'ratio' && !el.showRatios.checked) {
+          item.element.style.display = 'none';
+          return;
+        }
+        projected.copy(item.position).project(camera);
+        const visible = projected.z > -1 && projected.z < 1;
+        item.element.style.display = visible ? 'block' : 'none';
+        if (!visible) return;
+        const x = rect.left + (projected.x * 0.5 + 0.5) * rect.width;
+        const y = rect.top + (-projected.y * 0.5 + 0.5) * rect.height;
+        item.element.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
+      });
+    }
+
+    function updateControlVisibility() {
+      el.rpm0Val.textContent = formatRPM(readRpm());
+      const chainDrive = isChainDrive();
+      el.countButtons.forEach((button) => {
+        const count = Number(button.dataset.count);
+        button.classList.toggle('active', count === state.gearCount);
+        button.disabled = chainDrive && count > 2;
+        button.title = button.disabled ? 'チェーン駆動は2枚構成だけです。接続方法を「噛み合い」に戻すと選べます。' : '';
+      });
+
+      document.querySelectorAll('[data-gear-row]').forEach((row) => {
+        const index = Number(row.dataset.gearRow);
+        row.style.display = index < state.gearCount ? 'block' : 'none';
+      });
+      document.querySelectorAll('[data-conn-row]').forEach((row) => {
+        const index = Number(row.dataset.connRow);
+        row.style.display = index < state.gearCount - 1 ? 'grid' : 'none';
+      });
+
+      for (let i = 0; i < 4; i++) {
+        const val = document.getElementById(`teeth${i}Val`);
+        const input = document.getElementById(`teeth${i}`);
+        if (input) input.step = el.fineTeeth.checked ? '1' : '10';
+        if (val) val.textContent = state.teeth[i];
+        if (input && Number(input.value) !== state.teeth[i]) input.value = state.teeth[i];
+      }
+      for (let i = 0; i < 3; i++) {
+        const select = document.getElementById(`conn${i}`);
+        if (select && select.value !== state.connections[i]) select.value = state.connections[i];
+      }
+    }
+
+    function updateReadout() {
+      updateControlVisibility();
+      updateDomLabelTexts();
+
+      const teeth = activeTeeth();
+      const conns = activeConnections();
+      const rpms = computeRpms();
+      const { ratios, meshFlipCount } = computeRatios();
+      const finalIndex = state.gearCount - 1;
+      const finalRatio = ratios[finalIndex];
+      const finalAbs = Math.abs(finalRatio);
+      const finalTeeth = teeth[finalIndex];
+
+      el.speedBody.innerHTML = teeth.map((tooth, i) => `
+        <tr>
+          <td>${GEAR_NAMES[i]} ${i === 0 ? '駆動' : i === finalIndex ? '被動' : '中間'}<br><span class="small-note">${directionText(rpms[i])}</span></td>
+          <td>${tooth}</td>
+          <td>${formatSignedRatio(ratios[i])}</td>
+          <td>${formatRPM(Math.abs(rpms[i]))} rpm</td>
+        </tr>
+      `).join('');
+
+      const maxVal = Math.max(1, finalAbs);
+      const inputWidth = Math.max(5, (1 / maxVal) * 100);
+      const outputWidth = Math.max(5, (finalAbs / maxVal) * 100);
+      const finalText = finalSpeedText(state.teeth[0], finalTeeth);
+      el.ratioBox.style.display = el.showRatios.checked ? 'grid' : 'none';
+      el.ratioBox.innerHTML = `
+        <strong>駆動Aに対する最終被動${GEAR_NAMES[finalIndex]}の速さ</strong>
+        <div>${finalText} / 回転方向：<strong>${finalRatio >= 0 ? 'Aと同じ向き' : 'Aと逆向き'}</strong></div>
+        <div class="bar-row"><span>A入力</span><div class="bar-track"><div class="bar-fill" style="width:${inputWidth}%"></div></div><span>1倍</span></div>
+        <div class="bar-row"><span>${GEAR_NAMES[finalIndex]}出力</span><div class="bar-track"><div class="bar-fill" style="width:${outputWidth}%"></div></div><span>${formatRatioNumber(finalAbs)}倍</span></div>
+      `;
+
+      const connSummary = conns.map((c, i) => `${GEAR_NAMES[i]}→${GEAR_NAMES[i + 1]}：${c === 'mesh' ? '噛み合い/逆' : 'チェーン/同'}`).join('　');
+      el.formulaBox.innerHTML = `
+        <strong>関係式</strong><br>
+        隣り合う接続では <code>次のrpm = 前のrpm × 前の歯数 ÷ 次の歯数</code>。<br>
+        ただし、噛み合いは符号が反転し、チェーンは同じ向きのままです。<br>
+        この構成：${connSummary}<br>
+        逆回転になる接続は ${meshFlipCount} 回。したがって最終出力はAと<strong>${finalRatio >= 0 ? '同じ向き' : '逆向き'}</strong>です。<br>
+        同一平面の歯車列では中間歯車の歯数は打ち消し合うため、最終倍率の大きさは基本的に <code>Aの歯数 ÷ 最後の歯車の歯数</code> です。
+      `;
+
+      updateLegend(makeLegendItems());
+    }
+
+    function makeLegendItems() {
+      const conns = activeConnections();
+      const items = [];
+      for (let i = 0; i < conns.length; i++) {
+        items.push(`${GEAR_NAMES[i]}→${GEAR_NAMES[i + 1]} ${conns[i] === 'mesh' ? '噛み合い：逆回転' : 'チェーン：同方向'}`);
+      }
+      const ratios = computeRatios().ratios;
+      const final = ratios[state.gearCount - 1];
+      items.push(`最終出力：${formatSignedRatio(final)} / ${final >= 0 ? '同方向' : '逆方向'}`);
+      return items;
+    }
+
+    function updateLegend(items) {
+      el.legend.innerHTML = items.map((text) => `<div class="legend-item">${text}</div>`).join('');
+    }
+
+    function applyVisibilityToggles() {
+      state.edgeObjects.forEach((obj) => { obj.visible = el.showEdges.checked; });
+      state.pitchObjects.forEach((obj) => { obj.visible = el.showPitch.checked; });
+      state.labels.forEach((item) => {
+        if (item.type === 'ratio') item.element.style.display = el.showRatios.checked ? 'block' : 'none';
+      });
+      el.ratioBox.style.display = el.showRatios.checked ? 'grid' : 'none';
+    }
+
+    function fitCamera(bounds) {
+      const width = bounds.maxX - bounds.minX;
+      const height = bounds.maxY - bounds.minY;
+      const maxDim = Math.max(width, height);
+      const fov = THREE.MathUtils.degToRad(camera.fov);
+      const distance = maxDim / (2 * Math.tan(fov / 2)) * 1.48;
+      camera.position.set(0, -distance * 0.055, distance);
+      camera.lookAt(0, 0, 0);
+      controls.target.set(0, 0, 0);
+      controls.update();
+    }
+
+    function animate(now = performance.now()) {
+      requestAnimationFrame(animate);
+      const dt = Math.min((now - state.lastTime) / 1000, 0.05);
+      state.lastTime = now;
+
+      if (state.running) {
+        state.driveAngle += readRpm() * TAU / 60 * dt;
+      }
+
+      applyGearAngles();
+      controls.update();
+      updateDomLabels();
+      renderer.render(scene, camera);
+    }
+
+    function applyGearAngles() {
+      const { ratios, phases } = computeRatios();
+      state.gears.forEach((gear, i) => {
+        gear.rotation.z = state.driveAngle * ratios[i] + phases[i];
+      });
+
+      state.chainObjects.forEach((chain) => {
+        const travel = state.driveAngle * (chain.userData.driveRadius || 1);
+        updateChainLoop(chain, travel);
+      });
+    }
+
+    function directionText(value) {
+      if (Math.abs(value) < 0.005) return '停止';
+      return value > 0 ? '反時計回り' : '時計回り';
+    }
+
+    function gcd(a, b) {
+      a = Math.abs(a);
+      b = Math.abs(b);
+      while (b) [a, b] = [b, a % b];
+      return a || 1;
+    }
+
+    function reduceFraction(n, d) {
+      const g = gcd(n, d);
+      return [n / g, d / g];
+    }
+
+    function ratioFractionText(n, d) {
+      const [rn, rd] = reduceFraction(n, d);
+      if (rn === rd) return '1倍';
+      if (rn > rd) return `${rn}/${rd}倍（約${formatRatioNumber(rn / rd)}倍）`;
+      if (rn === 1) return `1/${rd}倍`;
+      return `${rn}/${rd}倍（約1/${formatRatioNumber(rd / rn)}）`;
+    }
+
+    function finalSpeedText(inputTeeth, outputTeeth) {
+      const [rn, rd] = reduceFraction(inputTeeth, outputTeeth);
+      if (rn === rd) return '同じ速さ（1倍速）';
+      if (rn > rd) return `出力は入力の ${rn}/${rd} 倍速（約${formatRatioNumber(rn / rd)}倍速）`;
+      if (rn === 1) return `出力は入力の 1/${rd} 倍速`;
+      return `出力は入力の ${rn}/${rd} 倍速（約1/${formatRatioNumber(rd / rn)}倍速）`;
+    }
+
+    function formatRatioNumber(value) {
+      return value.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
+    }
+
+    function formatSignedRatio(value) {
+      const sign = value < 0 ? '-' : '';
+      return `${sign}${formatRatioNumber(Math.abs(value))}倍`;
+    }
+
+    function formatRPM(value) {
+      const v = Math.abs(value) < 0.005 ? 0 : value;
+      return v.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
+    }
+
+    function formatHalf(value) {
+      return Number(value).toFixed(1).replace(/\.0$/, '');
+    }
+
+    el.rpm0.addEventListener('input', () => {
+      el.rpm0.value = String(Math.round(Number(el.rpm0.value)));
+      updateReadout();
+    });
+
+    el.playPause.addEventListener('click', () => {
+      state.running = !state.running;
+      el.playPause.textContent = state.running ? '一時停止' : '再生';
+    });
+
+    el.reset.addEventListener('click', () => {
+      state.driveAngle = 0;
+      applyGearAngles();
+    });
+
+    [el.showRatios, el.showEdges, el.showPitch].forEach((input) => {
+      input.addEventListener('change', () => {
+        applyVisibilityToggles();
+        updateReadout();
+      });
+    });
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
