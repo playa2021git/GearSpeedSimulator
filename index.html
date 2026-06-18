@@ -297,6 +297,7 @@
     }
 
     .legend {
+      display: none !important;
       position: fixed;
       top: 18px;
       right: 18px;
@@ -321,73 +322,57 @@
       border: 1px solid rgba(255, 255, 255, 0.42);
     }
 
-    .hud {
+    .info-panel {
       position: fixed;
       right: 18px;
       bottom: 18px;
-      width: min(390px, calc(100vw - 36px));
-      background: rgba(255, 255, 255, 0.80);
+      width: min(420px, calc(100vw - 500px));
+      max-height: min(48vh, 390px);
+      overflow: auto;
+      background: rgba(255, 255, 255, 0.88);
       color: #0f172a;
-      border: 1px solid rgba(255, 255, 255, 0.36);
+      border: 1px solid rgba(255, 255, 255, 0.42);
       border-radius: 18px;
       padding: 14px 16px;
       backdrop-filter: blur(16px);
       box-shadow: var(--shadow);
       font-size: 12px;
-      line-height: 1.6;
+      line-height: 1.55;
       z-index: 5;
     }
 
-    .hud strong { font-size: 13px; }
-    .hud kbd {
-      display: inline-block;
-      border: 1px solid rgba(15, 23, 42, 0.2);
-      border-bottom-width: 2px;
-      border-radius: 6px;
-      padding: 0 5px;
-      background: rgba(255, 255, 255, 0.65);
-      font-family: inherit;
+    .info-panel h2 {
+      margin: 0 0 10px;
+      font-size: 14px;
+      line-height: 1.35;
     }
 
-    .gear-label, .ratio-label {
+    .info-panel .card {
+      background: rgba(15, 23, 42, 0.06);
+      border-color: rgba(15, 23, 42, 0.10);
+    }
+
+    .info-panel .small-note {
+      color: #475569;
+    }
+
+    .gear-id-label {
       position: fixed;
       transform: translate(-50%, -50%);
-      border: 1px solid rgba(15, 23, 42, 0.15);
-      box-shadow: 0 10px 28px rgba(15, 23, 42, 0.18);
-      backdrop-filter: blur(12px);
-      white-space: pre-line;
-      text-align: center;
-      text-shadow: 0 1px 0 rgba(255,255,255,0.62);
-    }
-
-    .gear-label {
-      min-width: 146px;
-      padding: 10px 12px;
-      border-radius: 14px;
-      background: rgba(255, 255, 255, 0.90);
-      color: #0f172a;
-      font-size: 16px;
-      font-weight: 900;
-      line-height: 1.36;
-    }
-
-    .gear-label .sub {
-      display: block;
-      margin-top: 2px;
-      font-size: 13px;
-      font-weight: 800;
-      color: #334155;
-    }
-
-    .ratio-label {
-      min-width: 150px;
-      padding: 8px 10px;
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
       border-radius: 999px;
-      background: rgba(15, 23, 42, 0.88);
-      color: #fef3c7;
-      border-color: rgba(253, 230, 138, 0.30);
-      font-size: 13px;
-      font-weight: 900;
+      background: rgba(255, 255, 255, 0.94);
+      color: #0f172a;
+      border: 2px solid rgba(15, 23, 42, 0.16);
+      box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
+      backdrop-filter: blur(10px);
+      font-size: 17px;
+      font-weight: 950;
+      text-align: center;
+      text-shadow: 0 1px 0 rgba(255,255,255,0.70);
     }
 
     .load-status {
@@ -418,7 +403,7 @@
         width: calc(100vw - 24px);
         max-height: 58vh;
       }
-      .hud, .legend { display: none; }
+      .info-panel, .legend { display: none; }
     }
   </style>
 </head>
@@ -477,31 +462,28 @@
       <label class="toggle"><input id="showPitch" type="checkbox" checked> ピッチ円・基礎円を表示する</label>
     </section>
 
-    <section class="section readout">
-      <div class="card">
-        <table class="speed-table" aria-label="回転数一覧">
-          <thead><tr><th>歯車</th><th>歯数</th><th>倍率</th><th>回転数</th></tr></thead>
-          <tbody id="speedBody"></tbody>
-        </table>
-      </div>
-      <div class="card ratio-box" id="ratioBox"></div>
-      <div class="card formula" id="formulaBox"></div>
-      <div class="card">
-        <span class="badge">噛み合い＝逆回転</span>
-        <span class="badge">チェーン＝同方向</span>
-        <span class="badge">歯数が多いほど遅い</span>
-        <span class="badge">中間歯車は倍率を打ち消す</span>
-      </div>
-    </section>
   </aside>
 
   <div class="legend" id="legend"></div>
 
-  <div class="hud">
-    <strong>授業用メモ</strong><br>
-    歯形は20°圧力角のインボリュート曲線を使った教材用近似モデルです。チェーンはローラーとリンクを簡易表示し、駆動輪と被動輪が同じ向きに回ることを観察できます。<br>
-    操作：<kbd>ドラッグ</kbd>視点回転 / <kbd>ホイール</kbd>拡大縮小
-  </div>
+  <section class="info-panel" id="infoPanel" aria-label="歯車の状態一覧">
+    <h2>歯車の状態</h2>
+    <div class="card">
+      <table class="speed-table" aria-label="回転数一覧">
+        <thead id="speedHead"><tr><th>歯車</th><th>歯数</th><th>倍率</th><th>回転数</th></tr></thead>
+        <tbody id="speedBody"></tbody>
+      </table>
+    </div>
+    <div class="card ratio-box" id="ratioBox"></div>
+    <div class="card formula" id="formulaBox"></div>
+    <div class="card" id="infoHints">
+      <span class="badge">噛み合い＝逆回転</span>
+      <span class="badge">チェーン＝同方向</span>
+      <span class="badge">歯数が多いほど遅い</span>
+      <span class="badge">中間歯車は倍率を打ち消す</span>
+    </div>
+    <div class="small-note">操作：ドラッグで視点回転 / ホイールで拡大縮小</div>
+  </section>
 
   <script>
     window.__GEAR_SIM_LOADED = false;
@@ -552,9 +534,11 @@
       showRatios: document.getElementById('showRatios'),
       showEdges: document.getElementById('showEdges'),
       showPitch: document.getElementById('showPitch'),
+      speedHead: document.getElementById('speedHead'),
       speedBody: document.getElementById('speedBody'),
       ratioBox: document.getElementById('ratioBox'),
       formulaBox: document.getElementById('formulaBox'),
+      infoHints: document.getElementById('infoHints'),
       legend: document.getElementById('legend'),
       countButtons: Array.from(document.querySelectorAll('[data-count]')),
     };
@@ -782,12 +766,11 @@
         world.add(gear);
         state.gears.push(gear);
 
-        const labelYOffset = radii[i] + 2.0 + (i % 2 === 0 ? 0.8 : -0.2);
-        const labelY = i % 2 === 0 ? labelYOffset : -labelYOffset;
+        const labelY = radii[i] + 0.78;
         addDomLabel({
           type: 'gear',
           key: i,
-          className: 'gear-label',
+          className: 'gear-id-label',
           position: new THREE.Vector3(positions[i].x, labelY, 2.15),
         });
       }
@@ -805,17 +788,6 @@
           state.chainObjects.push(chain);
         }
 
-        const ratioPos = new THREE.Vector3(
-          (positions[i].x + positions[i + 1].x) / 2,
-          Math.max(radii[i], radii[i + 1]) + 2.2,
-          2.35
-        );
-        addDomLabel({
-          type: 'ratio',
-          key: i,
-          className: 'ratio-label',
-          position: ratioPos,
-        });
       }
 
       const maxR = Math.max(...radii);
@@ -1199,17 +1171,8 @@
       const conns = activeConnections();
 
       if (item.type === 'gear') {
-        const i = item.key;
-        const role = i === 0 ? '駆動輪' : i === state.gearCount - 1 ? '被動輪' : '中間輪';
-        item.element.innerHTML = `${GEAR_NAMES[i]} ${role}<span class="sub">${teeth[i]}歯 / ${formatRPM(Math.abs(rpms[i]))} rpm</span><span class="sub">${directionText(rpms[i])}</span>`;
-        return;
+        item.element.textContent = GEAR_NAMES[item.key];
       }
-
-      const i = item.key;
-      const sign = conns[i] === 'mesh' ? '逆回転' : '同じ向き';
-      const connText = conns[i] === 'mesh' ? '噛み合い' : 'チェーン';
-      item.element.textContent = `${connText}：${sign}\n× ${ratioFractionText(teeth[i], teeth[i + 1])}`;
-      item.element.style.display = el.showRatios.checked ? 'block' : 'none';
     }
 
     function updateDomLabelTexts() {
@@ -1219,8 +1182,9 @@
     function updateDomLabels() {
       const rect = renderer.domElement.getBoundingClientRect();
       const projected = new THREE.Vector3();
+      const placedRects = [];
       state.labels.forEach((item) => {
-        if (item.type === 'ratio' && !el.showRatios.checked) {
+        if (item.type === 'ratio' && !shouldShowFloatingRatioLabels()) {
           item.element.style.display = 'none';
           return;
         }
@@ -1230,8 +1194,68 @@
         if (!visible) return;
         const x = rect.left + (projected.x * 0.5 + 0.5) * rect.width;
         const y = rect.top + (-projected.y * 0.5 + 0.5) * rect.height;
-        item.element.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
+        const labelPosition = findReadableLabelPosition(item, x, y, placedRects);
+        item.element.style.transform = `translate(-50%, -50%) translate(${labelPosition.x}px, ${labelPosition.y}px)`;
+        placedRects.push(labelPosition.rect);
       });
+    }
+
+    function findReadableLabelPosition(item, preferredX, preferredY, placedRects) {
+      const width = Math.max(1, item.element.offsetWidth);
+      const height = Math.max(1, item.element.offsetHeight);
+      const margin = 8;
+      const safeLeft = margin;
+      const safeTop = margin;
+      const safeRight = window.innerWidth - margin;
+      const safeBottom = window.innerHeight - margin;
+      const offsets = item.type === 'ratio'
+        ? [
+            [0, 0], [0, -34], [0, -68], [0, -102],
+            [-44, -34], [44, -34], [-88, -68], [88, -68],
+            [-44, 34], [44, 34], [0, 34], [0, 68],
+          ]
+        : [
+            [0, 0], [0, 34], [0, -34],
+            [-48, 0], [48, 0], [-48, 34], [48, 34],
+          ];
+
+      let best = null;
+      let bestPenalty = Number.POSITIVE_INFINITY;
+      for (const [dx, dy] of offsets) {
+        const x = THREE.MathUtils.clamp(preferredX + dx, safeLeft + width / 2, safeRight - width / 2);
+        const y = THREE.MathUtils.clamp(preferredY + dy, safeTop + height / 2, safeBottom - height / 2);
+        const rect = makeLabelRect(x, y, width, height);
+        const overlap = placedRects.reduce((sum, placed) => sum + overlapArea(rect, placed, margin), 0);
+        const penalty = overlap * 1000 + Math.abs(dx) + Math.abs(dy) * 1.2;
+        if (overlap === 0) return { x, y, rect };
+        if (penalty < bestPenalty) {
+          bestPenalty = penalty;
+          best = { x, y, rect };
+        }
+      }
+      return best;
+    }
+
+    function makeLabelRect(centerX, centerY, width, height) {
+      return {
+        left: centerX - width / 2,
+        right: centerX + width / 2,
+        top: centerY - height / 2,
+        bottom: centerY + height / 2,
+      };
+    }
+
+    function overlapArea(a, b, padding = 0) {
+      const left = Math.max(a.left - padding, b.left - padding);
+      const right = Math.min(a.right + padding, b.right + padding);
+      const top = Math.max(a.top - padding, b.top - padding);
+      const bottom = Math.min(a.bottom + padding, b.bottom + padding);
+      if (right <= left || bottom <= top) return 0;
+      return (right - left) * (bottom - top);
+    }
+
+    function shouldShowFloatingRatioLabels() {
+      return el.showRatios.checked && state.gearCount <= 2;
     }
 
     function updateControlVisibility() {
@@ -1279,11 +1303,15 @@
       const finalAbs = Math.abs(finalRatio);
       const finalTeeth = teeth[finalIndex];
 
+      const showRatioDetails = el.showRatios.checked;
+      el.speedHead.innerHTML = showRatioDetails
+        ? '<tr><th>歯車</th><th>歯数</th><th>倍率</th><th>回転数</th></tr>'
+        : '<tr><th>歯車</th><th>歯数</th><th>回転数</th></tr>';
       el.speedBody.innerHTML = teeth.map((tooth, i) => `
         <tr>
           <td>${GEAR_NAMES[i]} ${i === 0 ? '駆動' : i === finalIndex ? '被動' : '中間'}<br><span class="small-note">${directionText(rpms[i])}</span></td>
           <td>${tooth}</td>
-          <td>${formatSignedRatio(ratios[i])}</td>
+          ${showRatioDetails ? `<td>${formatSignedRatio(ratios[i])}</td>` : ''}
           <td>${formatRPM(Math.abs(rpms[i]))} rpm</td>
         </tr>
       `).join('');
@@ -1292,7 +1320,7 @@
       const inputWidth = Math.max(5, (1 / maxVal) * 100);
       const outputWidth = Math.max(5, (finalAbs / maxVal) * 100);
       const finalText = finalSpeedText(state.teeth[0], finalTeeth);
-      el.ratioBox.style.display = el.showRatios.checked ? 'grid' : 'none';
+      el.ratioBox.style.display = showRatioDetails ? 'grid' : 'none';
       el.ratioBox.innerHTML = `
         <strong>駆動Aに対する最終被動${GEAR_NAMES[finalIndex]}の速さ</strong>
         <div>${finalText} / 回転方向：<strong>${finalRatio >= 0 ? 'Aと同じ向き' : 'Aと逆向き'}</strong></div>
@@ -1301,6 +1329,8 @@
       `;
 
       const connSummary = conns.map((c, i) => `${GEAR_NAMES[i]}→${GEAR_NAMES[i + 1]}：${c === 'mesh' ? '噛み合い/逆' : 'チェーン/同'}`).join('　');
+      el.formulaBox.style.display = showRatioDetails ? 'block' : 'none';
+      el.infoHints.style.display = showRatioDetails ? 'block' : 'none';
       el.formulaBox.innerHTML = `
         <strong>関係式</strong><br>
         隣り合う接続では <code>次のrpm = 前のrpm × 前の歯数 ÷ 次の歯数</code>。<br>
@@ -1310,7 +1340,7 @@
         同一平面の歯車列では中間歯車の歯数は打ち消し合うため、最終倍率の大きさは基本的に <code>Aの歯数 ÷ 最後の歯車の歯数</code> です。
       `;
 
-      updateLegend(makeLegendItems());
+      updateLegend(showRatioDetails ? makeLegendItems() : []);
     }
 
     function makeLegendItems() {
@@ -1333,17 +1363,25 @@
       state.edgeObjects.forEach((obj) => { obj.visible = el.showEdges.checked; });
       state.pitchObjects.forEach((obj) => { obj.visible = el.showPitch.checked; });
       state.labels.forEach((item) => {
-        if (item.type === 'ratio') item.element.style.display = el.showRatios.checked ? 'block' : 'none';
+        if (item.type === 'ratio') item.element.style.display = shouldShowFloatingRatioLabels() ? 'block' : 'none';
       });
       el.ratioBox.style.display = el.showRatios.checked ? 'grid' : 'none';
+      el.formulaBox.style.display = el.showRatios.checked ? 'block' : 'none';
+      el.infoHints.style.display = el.showRatios.checked ? 'block' : 'none';
     }
 
     function fitCamera(bounds) {
       const width = bounds.maxX - bounds.minX;
       const height = bounds.maxY - bounds.minY;
-      const maxDim = Math.max(width, height);
       const fov = THREE.MathUtils.degToRad(camera.fov);
-      const distance = maxDim / (2 * Math.tan(fov / 2)) * 1.48;
+      const desktopUiReserve = window.innerWidth > 920;
+      const leftReserve = desktopUiReserve ? Math.min(470, window.innerWidth * 0.35) : 0;
+      const rightReserve = desktopUiReserve ? Math.min(460, window.innerWidth * 0.34) : 0;
+      const usableWidth = Math.max(320, window.innerWidth - leftReserve - rightReserve);
+      const effectiveAspect = usableWidth / window.innerHeight;
+      const distanceForHeight = height / (2 * Math.tan(fov / 2));
+      const distanceForWidth = width / (2 * Math.tan(fov / 2) * effectiveAspect);
+      const distance = Math.max(distanceForHeight, distanceForWidth) * 1.30;
       camera.position.set(0, -distance * 0.055, distance);
       camera.lookAt(0, 0, 0);
       controls.target.set(0, 0, 0);
