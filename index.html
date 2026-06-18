@@ -1209,7 +1209,7 @@
       const sign = conns[i] === 'mesh' ? '逆回転' : '同じ向き';
       const connText = conns[i] === 'mesh' ? '噛み合い' : 'チェーン';
       item.element.textContent = `${connText}：${sign}\n× ${ratioFractionText(teeth[i], teeth[i + 1])}`;
-      item.element.style.display = el.showRatios.checked ? 'block' : 'none';
+      item.element.style.display = shouldShowFloatingRatioLabels() ? 'block' : 'none';
     }
 
     function updateDomLabelTexts() {
@@ -1219,8 +1219,9 @@
     function updateDomLabels() {
       const rect = renderer.domElement.getBoundingClientRect();
       const projected = new THREE.Vector3();
+      const placedRects = [];
       state.labels.forEach((item) => {
-        if (item.type === 'ratio' && !el.showRatios.checked) {
+        if (item.type === 'ratio' && !shouldShowFloatingRatioLabels()) {
           item.element.style.display = 'none';
           return;
         }
@@ -1230,8 +1231,68 @@
         if (!visible) return;
         const x = rect.left + (projected.x * 0.5 + 0.5) * rect.width;
         const y = rect.top + (-projected.y * 0.5 + 0.5) * rect.height;
-        item.element.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
+        const labelPosition = findReadableLabelPosition(item, x, y, placedRects);
+        item.element.style.transform = `translate(-50%, -50%) translate(${labelPosition.x}px, ${labelPosition.y}px)`;
+        placedRects.push(labelPosition.rect);
       });
+    }
+
+    function findReadableLabelPosition(item, preferredX, preferredY, placedRects) {
+      const width = Math.max(1, item.element.offsetWidth);
+      const height = Math.max(1, item.element.offsetHeight);
+      const margin = 8;
+      const safeLeft = margin;
+      const safeTop = margin;
+      const safeRight = window.innerWidth - margin;
+      const safeBottom = window.innerHeight - margin;
+      const offsets = item.type === 'ratio'
+        ? [
+            [0, 0], [0, -34], [0, -68], [0, -102],
+            [-44, -34], [44, -34], [-88, -68], [88, -68],
+            [-44, 34], [44, 34], [0, 34], [0, 68],
+          ]
+        : [
+            [0, 0], [0, 34], [0, -34],
+            [-48, 0], [48, 0], [-48, 34], [48, 34],
+          ];
+
+      let best = null;
+      let bestPenalty = Number.POSITIVE_INFINITY;
+      for (const [dx, dy] of offsets) {
+        const x = THREE.MathUtils.clamp(preferredX + dx, safeLeft + width / 2, safeRight - width / 2);
+        const y = THREE.MathUtils.clamp(preferredY + dy, safeTop + height / 2, safeBottom - height / 2);
+        const rect = makeLabelRect(x, y, width, height);
+        const overlap = placedRects.reduce((sum, placed) => sum + overlapArea(rect, placed, margin), 0);
+        const penalty = overlap * 1000 + Math.abs(dx) + Math.abs(dy) * 1.2;
+        if (overlap === 0) return { x, y, rect };
+        if (penalty < bestPenalty) {
+          bestPenalty = penalty;
+          best = { x, y, rect };
+        }
+      }
+      return best;
+    }
+
+    function makeLabelRect(centerX, centerY, width, height) {
+      return {
+        left: centerX - width / 2,
+        right: centerX + width / 2,
+        top: centerY - height / 2,
+        bottom: centerY + height / 2,
+      };
+    }
+
+    function overlapArea(a, b, padding = 0) {
+      const left = Math.max(a.left - padding, b.left - padding);
+      const right = Math.min(a.right + padding, b.right + padding);
+      const top = Math.max(a.top - padding, b.top - padding);
+      const bottom = Math.min(a.bottom + padding, b.bottom + padding);
+      if (right <= left || bottom <= top) return 0;
+      return (right - left) * (bottom - top);
+    }
+
+    function shouldShowFloatingRatioLabels() {
+      return el.showRatios.checked && state.gearCount <= 2;
     }
 
     function updateControlVisibility() {
@@ -1333,7 +1394,7 @@
       state.edgeObjects.forEach((obj) => { obj.visible = el.showEdges.checked; });
       state.pitchObjects.forEach((obj) => { obj.visible = el.showPitch.checked; });
       state.labels.forEach((item) => {
-        if (item.type === 'ratio') item.element.style.display = el.showRatios.checked ? 'block' : 'none';
+        if (item.type === 'ratio') item.element.style.display = shouldShowFloatingRatioLabels() ? 'block' : 'none';
       });
       el.ratioBox.style.display = el.showRatios.checked ? 'grid' : 'none';
     }
