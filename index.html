@@ -485,8 +485,8 @@
     <div class="small-note">操作：ドラッグで視点回転 / ホイールで拡大縮小</div>
   </section>
 
-  <script>
-    window.__GEAR_SIM_LOADED = false;
+    <script>
+      window.__GEAR_SIM_LOADED = false;
     window.addEventListener('error', () => {
       const status = document.getElementById('loadStatus');
       if (!status || window.__GEAR_SIM_LOADED) return;
@@ -496,21 +496,379 @@
       const status = document.getElementById('loadStatus');
       if (status && !window.__GEAR_SIM_LOADED) {
         status.innerHTML = '<strong>まだ歯車を読み込み中です。</strong><br>長く続く場合は、Three.js CDNがブロックされています。';
-      }
-    }, 4000);
-  </script>
-  <script type="importmap">
+        }
+      }, 4000);
+    </script>
+    <script>
+      window.startGearSimFallback = function startGearSimFallback(reason) {
+        if (window.__GEAR_SIM_LOADED) return;
+        window.__GEAR_SIM_LOADED = true;
+        console.warn('Starting 2D fallback simulator because Three.js failed to load.', reason);
+
+        const TAU = Math.PI * 2;
+        const GEAR_NAMES = ['A', 'B', 'C', 'D'];
+        const state = {
+          gearCount: 2,
+          teeth: [20, 40, 30, 60],
+          connections: ['mesh', 'mesh', 'mesh'],
+          running: true,
+          driveAngle: 0,
+          lastTime: performance.now(),
+        };
+        const el = {
+          scene: document.getElementById('scene'),
+          loadStatus: document.getElementById('loadStatus'),
+          gearControls: document.getElementById('gearControls'),
+          connectionControls: document.getElementById('connectionControls'),
+          fineTeeth: document.getElementById('fineTeeth'),
+          rpm0: document.getElementById('rpm0'),
+          rpm0Val: document.getElementById('rpm0Val'),
+          playPause: document.getElementById('playPause'),
+          reset: document.getElementById('reset'),
+          showRatios: document.getElementById('showRatios'),
+          showEdges: document.getElementById('showEdges'),
+          showPitch: document.getElementById('showPitch'),
+          speedHead: document.getElementById('speedHead'),
+          speedBody: document.getElementById('speedBody'),
+          ratioBox: document.getElementById('ratioBox'),
+          formulaBox: document.getElementById('formulaBox'),
+          infoHints: document.getElementById('infoHints'),
+          countButtons: Array.from(document.querySelectorAll('[data-count]')),
+        };
+        if (el.loadStatus) el.loadStatus.style.display = 'none';
+        el.scene.innerHTML = '<canvas aria-label="2D歯車シミュレータ"></canvas>';
+        const canvas = el.scene.querySelector('canvas');
+        const ctx = canvas.getContext('2d');
+
+        buildControls();
+        resize();
+        updateAll();
+        requestAnimationFrame(animate);
+        window.addEventListener('resize', () => {
+          resize();
+          draw();
+        });
+
+        function buildControls() {
+          el.gearControls.innerHTML = GEAR_NAMES.map((name, index) => `
+            <div class="control gear-control" data-gear-row="${index}">
+              <div class="control-head">
+                <label for="teeth${index}">${name}：${index === 0 ? '駆動輪' : index === 3 ? '最終被動輪' : '歯車'}の歯数</label>
+                <span class="value"><span id="teeth${index}Val">${state.teeth[index]}</span> 歯</span>
+              </div>
+              <input id="teeth${index}" data-teeth-index="${index}" type="range" min="10" max="100" step="10" value="${state.teeth[index]}">
+            </div>
+          `).join('');
+          el.connectionControls.innerHTML = [0, 1, 2].map((index) => `
+            <div class="connection-row" data-conn-row="${index}">
+              <div class="connection-name">${GEAR_NAMES[index]} → ${GEAR_NAMES[index + 1]}</div>
+              <select id="conn${index}" data-conn-index="${index}" aria-label="${GEAR_NAMES[index]}から${GEAR_NAMES[index + 1]}への接続">
+                <option value="mesh">噛み合い：逆回転</option>
+                <option value="chain">チェーン：同じ向き</option>
+              </select>
+            </div>
+          `).join('');
+          document.querySelectorAll('[data-teeth-index]').forEach((input) => {
+            input.addEventListener('input', () => {
+              state.teeth[Number(input.dataset.teethIndex)] = normalizeTeeth(Number(input.value));
+              updateAll();
+            });
+          });
+          document.querySelectorAll('[data-conn-index]').forEach((select) => {
+            select.addEventListener('change', () => {
+              const index = Number(select.dataset.connIndex);
+              if (select.value === 'chain') {
+                state.gearCount = 2;
+                state.connections = ['chain', 'mesh', 'mesh'];
+              } else {
+                state.connections[index] = 'mesh';
+              }
+              updateAll();
+            });
+          });
+          el.countButtons.forEach((button) => {
+            button.addEventListener('click', () => {
+              if (button.disabled) return;
+              state.gearCount = Number(button.dataset.count);
+              if (state.gearCount > 2) state.connections = ['mesh', 'mesh', 'mesh'];
+              updateAll();
+            });
+          });
+          el.fineTeeth.addEventListener('change', updateAll);
+          el.rpm0.addEventListener('input', updateReadout);
+          el.playPause.addEventListener('click', () => {
+            state.running = !state.running;
+            el.playPause.textContent = state.running ? '一時停止' : '再生';
+          });
+          el.reset.addEventListener('click', () => {
+            state.driveAngle = 0;
+            draw();
+          });
+          [el.showRatios, el.showEdges, el.showPitch].forEach((input) => input.addEventListener('change', updateAll));
+        }
+
+        function resize() {
+          const dpr = Math.min(window.devicePixelRatio || 1, 2);
+          canvas.width = Math.floor(window.innerWidth * dpr);
+          canvas.height = Math.floor(window.innerHeight * dpr);
+          canvas.style.width = '100%';
+          canvas.style.height = '100%';
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+
+        function updateAll() {
+          if (state.connections[0] === 'chain') {
+            state.gearCount = 2;
+            state.connections = ['chain', 'mesh', 'mesh'];
+          }
+          state.teeth = state.teeth.map(normalizeTeeth);
+          updateControls();
+          updateReadout();
+          draw();
+        }
+
+        function updateControls() {
+          el.rpm0Val.textContent = formatRPM(readRpm());
+          const chainDrive = state.gearCount === 2 && state.connections[0] === 'chain';
+          el.countButtons.forEach((button) => {
+            const count = Number(button.dataset.count);
+            button.classList.toggle('active', count === state.gearCount);
+            button.disabled = chainDrive && count > 2;
+          });
+          document.querySelectorAll('[data-gear-row]').forEach((row) => {
+            row.style.display = Number(row.dataset.gearRow) < state.gearCount ? 'block' : 'none';
+          });
+          document.querySelectorAll('[data-conn-row]').forEach((row) => {
+            row.style.display = Number(row.dataset.connRow) < state.gearCount - 1 ? 'grid' : 'none';
+          });
+          state.teeth.forEach((tooth, index) => {
+            const val = document.getElementById(`teeth${index}Val`);
+            const input = document.getElementById(`teeth${index}`);
+            if (val) val.textContent = tooth;
+            if (input) {
+              input.step = el.fineTeeth.checked ? '1' : '10';
+              input.value = tooth;
+            }
+          });
+          state.connections.forEach((conn, index) => {
+            const select = document.getElementById(`conn${index}`);
+            if (select) select.value = conn;
+          });
+        }
+
+        function draw() {
+          ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+          drawGrid();
+          const layout = makeLayout();
+          const ratios = computeRatios().ratios;
+          const colors = ['#fbbf24', '#38bdf8', '#34d399', '#f472b6'];
+          layout.positions.forEach((p, i) => {
+            drawGear(p.x, p.y, layout.radii[i], state.teeth[i], colors[i], state.driveAngle * ratios[i], GEAR_NAMES[i]);
+          });
+          layout.positions.slice(0, -1).forEach((p, i) => drawConnection(p, layout.positions[i + 1], state.connections[i]));
+        }
+
+        function drawGrid() {
+          ctx.save();
+          ctx.strokeStyle = 'rgba(100, 116, 139, 0.18)';
+          ctx.lineWidth = 1;
+          for (let x = 0; x < window.innerWidth; x += 32) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, window.innerHeight);
+            ctx.stroke();
+          }
+          for (let y = 0; y < window.innerHeight; y += 32) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(window.innerWidth, y);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+
+        function makeLayout() {
+          const teeth = state.teeth.slice(0, state.gearCount);
+          const base = Math.min(1.35, Math.max(0.72, (window.innerWidth - 900) / 360));
+          const radii = teeth.map((tooth) => Math.max(22, tooth * base));
+          const totalWidth = radii.reduce((sum, r) => sum + r * 2, 0) + Math.max(0, state.gearCount - 1) * 18;
+          let x = Math.max(500, (window.innerWidth - totalWidth) / 2 + radii[0]);
+          const y = Math.max(260, window.innerHeight * 0.46);
+          const positions = [];
+          for (let i = 0; i < state.gearCount; i++) {
+            if (i > 0) x += radii[i - 1] + radii[i] + (state.connections[i - 1] === 'chain' ? 52 : 12);
+            positions.push({ x, y });
+          }
+          return { positions, radii };
+        }
+
+        function drawGear(x, y, radius, teeth, color, angle, name) {
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate(angle);
+          ctx.fillStyle = color;
+          ctx.strokeStyle = '#0f172a';
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          for (let i = 0; i < teeth * 2; i++) {
+            const a = i * Math.PI / teeth;
+            const r = i % 2 === 0 ? radius : radius * 0.91;
+            const px = Math.cos(a) * r;
+            const py = Math.sin(a) * r;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          }
+          ctx.closePath();
+          ctx.fill();
+          if (el.showEdges.checked) ctx.stroke();
+          if (el.showPitch.checked) {
+            ctx.setLineDash([5, 5]);
+            ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+            ctx.beginPath();
+            ctx.arc(0, 0, radius * 0.86, 0, TAU);
+            ctx.stroke();
+          }
+          ctx.fillStyle = '#111827';
+          ctx.beginPath();
+          ctx.arc(0, 0, Math.max(6, radius * 0.12), 0, TAU);
+          ctx.fill();
+          ctx.fillStyle = '#ef4444';
+          ctx.beginPath();
+          ctx.arc(radius * 0.62, 0, 4, 0, TAU);
+          ctx.fill();
+          ctx.restore();
+          ctx.save();
+          ctx.fillStyle = 'rgba(255,255,255,0.94)';
+          ctx.strokeStyle = 'rgba(15,23,42,0.18)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(x, y - radius - 22, 17, 0, TAU);
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = '#0f172a';
+          ctx.font = '900 17px system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(name, x, y - radius - 22);
+          ctx.restore();
+        }
+
+        function drawConnection(a, b, type) {
+          ctx.save();
+          ctx.strokeStyle = type === 'chain' ? '#334155' : '#38bdf8';
+          ctx.setLineDash(type === 'chain' ? [] : [5, 6]);
+          ctx.lineWidth = type === 'chain' ? 5 : 2;
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+          if (el.showRatios.checked) {
+            ctx.fillStyle = 'rgba(15,23,42,0.84)';
+            ctx.font = '800 12px system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(type === 'chain' ? '同方向' : '逆回転', (a.x + b.x) / 2, a.y - 18);
+          }
+          ctx.restore();
+        }
+
+        function animate(now = performance.now()) {
+          const dt = Math.min((now - state.lastTime) / 1000, 0.05);
+          state.lastTime = now;
+          if (state.running) state.driveAngle += readRpm() * TAU / 60 * dt;
+          draw();
+          requestAnimationFrame(animate);
+        }
+
+        function updateReadout() {
+          updateControls();
+          const teeth = state.teeth.slice(0, state.gearCount);
+          const rpms = computeRpms();
+          const ratios = computeRatios().ratios;
+          const showRatioDetails = el.showRatios.checked;
+          const finalIndex = state.gearCount - 1;
+          const finalRatio = ratios[finalIndex];
+          el.speedHead.innerHTML = showRatioDetails
+            ? '<tr><th>歯車</th><th>歯数</th><th>倍率</th><th>回転数</th></tr>'
+            : '<tr><th>歯車</th><th>歯数</th><th>回転数</th></tr>';
+          el.speedBody.innerHTML = teeth.map((tooth, i) => `
+            <tr>
+              <td>${GEAR_NAMES[i]} ${i === 0 ? '駆動' : i === finalIndex ? '被動' : '中間'}<br><span class="small-note">${directionText(rpms[i])}</span></td>
+              <td>${tooth}</td>
+              ${showRatioDetails ? `<td>${formatSignedRatio(ratios[i])}</td>` : ''}
+              <td>${formatRPM(Math.abs(rpms[i]))} rpm</td>
+            </tr>
+          `).join('');
+          el.ratioBox.style.display = showRatioDetails ? 'grid' : 'none';
+          el.formulaBox.style.display = showRatioDetails ? 'block' : 'none';
+          el.infoHints.style.display = showRatioDetails ? 'block' : 'none';
+          el.ratioBox.innerHTML = `<strong>最終出力：${formatSignedRatio(finalRatio)}</strong><div>回転方向：${finalRatio >= 0 ? 'Aと同じ向き' : 'Aと逆向き'}</div>`;
+          const connSummary = state.connections.slice(0, state.gearCount - 1).map((c, i) => `${GEAR_NAMES[i]}→${GEAR_NAMES[i + 1]}：${c === 'mesh' ? '噛み合い/逆' : 'チェーン/同'}`).join('　');
+          el.formulaBox.innerHTML = `<strong>接続方式</strong><br>${connSummary}`;
+          draw();
+        }
+
+        function normalizeTeeth(value) {
+          const clamped = Math.min(100, Math.max(10, Math.round(value)));
+          if (el.fineTeeth.checked) return clamped;
+          return Math.min(100, Math.max(10, Math.round(clamped / 10) * 10));
+        }
+
+        function readRpm() {
+          return Number(el.rpm0.value);
+        }
+
+        function computeRatios() {
+          const ratios = [1];
+          for (let i = 0; i < state.gearCount - 1; i++) {
+            const direction = state.connections[i] === 'mesh' ? -1 : 1;
+            ratios[i + 1] = ratios[i] * direction * state.teeth[i] / state.teeth[i + 1];
+          }
+          return { ratios };
+        }
+
+        function computeRpms() {
+          return computeRatios().ratios.map((ratio) => readRpm() * ratio);
+        }
+
+        function directionText(value) {
+          if (Math.abs(value) < 0.005) return '停止';
+          return value > 0 ? '反時計回り' : '時計回り';
+        }
+
+        function formatRatioNumber(value) {
+          return value.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
+        }
+
+        function formatSignedRatio(value) {
+          return `${value < 0 ? '-' : ''}${formatRatioNumber(Math.abs(value))}倍`;
+        }
+
+        function formatRPM(value) {
+          const v = Math.abs(value) < 0.005 ? 0 : value;
+          return v.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
+        }
+      };
+    </script>
+    <script type="importmap">
     {
       "imports": {
         "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
         "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
       }
     }
-  </script>
-  <script type="module">
-    const { THREE, OrbitControls } = await loadThreeDependencies();
+    </script>
+    <script type="module">
+      let THREE;
+      let OrbitControls;
+      try {
+        ({ THREE, OrbitControls } = await loadThreeDependencies());
+      } catch (error) {
+        window.startGearSimFallback(error);
+        throw error;
+      }
 
-    const TAU = Math.PI * 2;
+      const TAU = Math.PI * 2;
     const MODULE_SIZE = 0.17;
     const THICKNESS = 0.70;
     const PRESSURE_ANGLE = THREE.MathUtils.degToRad(20);
@@ -554,7 +912,7 @@
       throw new Error(`Unable to load Three.js dependencies. ${errors.join(' / ')}`);
     }
 
-    function importWithTimeout(url, timeoutMs = 3500) {
+      function importWithTimeout(url, timeoutMs = 2200) {
       return Promise.race([
         import(url),
         new Promise((_, reject) => {
@@ -1292,6 +1650,64 @@
       const bottom = Math.min(a.bottom + padding, b.bottom + padding);
       if (right <= left || bottom <= top) return 0;
       return (right - left) * (bottom - top);
+    }
+
+    function findReadableLabelPosition(item, preferredX, preferredY, placedRects) {
+      const width = Math.max(1, item.element.offsetWidth);
+      const height = Math.max(1, item.element.offsetHeight);
+      const margin = 8;
+      const safeLeft = margin;
+      const safeTop = margin;
+      const safeRight = window.innerWidth - margin;
+      const safeBottom = window.innerHeight - margin;
+      const offsets = item.type === 'ratio'
+        ? [
+            [0, 0], [0, -34], [0, -68], [0, -102],
+            [-44, -34], [44, -34], [-88, -68], [88, -68],
+            [-44, 34], [44, 34], [0, 34], [0, 68],
+          ]
+        : [
+            [0, 0], [0, 34], [0, -34],
+            [-48, 0], [48, 0], [-48, 34], [48, 34],
+          ];
+
+      let best = null;
+      let bestPenalty = Number.POSITIVE_INFINITY;
+      for (const [dx, dy] of offsets) {
+        const x = THREE.MathUtils.clamp(preferredX + dx, safeLeft + width / 2, safeRight - width / 2);
+        const y = THREE.MathUtils.clamp(preferredY + dy, safeTop + height / 2, safeBottom - height / 2);
+        const rect = makeLabelRect(x, y, width, height);
+        const overlap = placedRects.reduce((sum, placed) => sum + overlapArea(rect, placed, margin), 0);
+        const penalty = overlap * 1000 + Math.abs(dx) + Math.abs(dy) * 1.2;
+        if (overlap === 0) return { x, y, rect };
+        if (penalty < bestPenalty) {
+          bestPenalty = penalty;
+          best = { x, y, rect };
+        }
+      }
+      return best;
+    }
+
+    function makeLabelRect(centerX, centerY, width, height) {
+      return {
+        left: centerX - width / 2,
+        right: centerX + width / 2,
+        top: centerY - height / 2,
+        bottom: centerY + height / 2,
+      };
+    }
+
+    function overlapArea(a, b, padding = 0) {
+      const left = Math.max(a.left - padding, b.left - padding);
+      const right = Math.min(a.right + padding, b.right + padding);
+      const top = Math.max(a.top - padding, b.top - padding);
+      const bottom = Math.min(a.bottom + padding, b.bottom + padding);
+      if (right <= left || bottom <= top) return 0;
+      return (right - left) * (bottom - top);
+    }
+
+    function shouldShowFloatingRatioLabels() {
+      return el.showRatios.checked && state.gearCount <= 2;
     }
 
     function findReadableLabelPosition(item, preferredX, preferredY, placedRects) {
