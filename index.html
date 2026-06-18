@@ -177,6 +177,19 @@
       gap: 4px;
     }
 
+    .compound-options {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .compound-note {
+      color: #fde68a;
+      font-size: 11px;
+      line-height: 1.55;
+      margin-top: 6px;
+    }
+
     .connection-row {
       display: grid;
       grid-template-columns: 94px 1fr;
@@ -444,6 +457,16 @@
       <label class="toggle"><input id="fineTeeth" type="checkbox"> 歯数を1歯ずつ細かく変更する</label>
       <div class="small-note">通常は10歯きざみです。チェックONで10〜100歯を1歯ずつ変更できます。</div>
       <div id="gearControls" class="gear-controls"></div>
+      <label class="toggle"><input id="compoundMode" type="checkbox"> 二段歯車で倍率を積み重ねる</label>
+      <div id="compoundOptions" class="compound-options" hidden>
+        <div class="control-title">二段歯車の段数</div>
+        <div class="button-row" role="group" aria-label="二段歯車の段数">
+          <button class="mode-button" data-compound-stages="1" type="button">1段</button>
+          <button class="mode-button" data-compound-stages="2" type="button">2段</button>
+          <button class="mode-button" data-compound-stages="3" type="button">3段</button>
+        </div>
+        <div class="compound-note">各軸の上段歯車が次の下段歯車を回します。段数を増やすと倍率が掛け算で積み重なります。</div>
+      </div>
     </section>
 
     <section class="section">
@@ -495,9 +518,9 @@
     setTimeout(() => {
       const status = document.getElementById('loadStatus');
       if (status && !window.__GEAR_SIM_LOADED) {
-        status.innerHTML = '<strong>まだ歯車を読み込み中です。</strong><br>長く続く場合は、Three.js CDNがブロックされています。';
+        status.innerHTML = '<strong>Three.jsの読み込みに時間がかかっています。</strong><br>学校ネットワークでは外部CDNの応答が遅い場合があります。もう少し待ってください。';
         }
-      }, 4000);
+      }, 8000);
     </script>
     <script>
       window.startGearSimFallback = function startGearSimFallback(reason) {
@@ -510,6 +533,9 @@
         const state = {
           gearCount: 2,
           teeth: [20, 40, 30, 60],
+          compoundTeeth: [20, 20, 20, 20],
+          compoundMode: false,
+          compoundStages: 1,
           connections: ['mesh', 'mesh', 'mesh'],
           running: true,
           driveAngle: 0,
@@ -521,6 +547,9 @@
           gearControls: document.getElementById('gearControls'),
           connectionControls: document.getElementById('connectionControls'),
           fineTeeth: document.getElementById('fineTeeth'),
+          compoundMode: document.getElementById('compoundMode'),
+          compoundOptions: document.getElementById('compoundOptions'),
+          compoundStageButtons: Array.from(document.querySelectorAll('[data-compound-stages]')),
           rpm0: document.getElementById('rpm0'),
           rpm0Val: document.getElementById('rpm0Val'),
           playPause: document.getElementById('playPause'),
@@ -557,6 +586,13 @@
                 <span class="value"><span id="teeth${index}Val">${state.teeth[index]}</span> 歯</span>
               </div>
               <input id="teeth${index}" data-teeth-index="${index}" type="range" min="10" max="100" step="10" value="${state.teeth[index]}">
+              <div class="control" data-compound-row="${index}">
+                <div class="control-head">
+                  <label for="compoundTeeth${index}">${name}上段：次を回す歯数</label>
+                  <span class="value"><span id="compoundTeeth${index}Val">${state.compoundTeeth[index]}</span> 歯</span>
+                </div>
+                <input id="compoundTeeth${index}" data-compound-teeth-index="${index}" type="range" min="10" max="100" step="10" value="${state.compoundTeeth[index]}">
+              </div>
             </div>
           `).join('');
           el.connectionControls.innerHTML = [0, 1, 2].map((index) => `
@@ -571,6 +607,12 @@
           document.querySelectorAll('[data-teeth-index]').forEach((input) => {
             input.addEventListener('input', () => {
               state.teeth[Number(input.dataset.teethIndex)] = normalizeTeeth(Number(input.value));
+              updateAll();
+            });
+          });
+          document.querySelectorAll('[data-compound-teeth-index]').forEach((input) => {
+            input.addEventListener('input', () => {
+              state.compoundTeeth[Number(input.dataset.compoundTeethIndex)] = normalizeTeeth(Number(input.value));
               updateAll();
             });
           });
@@ -591,6 +633,17 @@
               if (button.disabled) return;
               state.gearCount = Number(button.dataset.count);
               if (state.gearCount > 2) state.connections = ['mesh', 'mesh', 'mesh'];
+              updateAll();
+            });
+          });
+          el.compoundMode.addEventListener('change', () => {
+            state.compoundMode = el.compoundMode.checked;
+            updateAll();
+          });
+          el.compoundStageButtons.forEach((button) => {
+            button.addEventListener('click', () => {
+              state.compoundStages = Number(button.dataset.compoundStages);
+              state.compoundMode = true;
               updateAll();
             });
           });
@@ -617,11 +670,16 @@
         }
 
         function updateAll() {
-          if (state.connections[0] === 'chain') {
+          if (state.compoundMode) {
+            state.compoundStages = Math.min(3, Math.max(1, state.compoundStages));
+            state.gearCount = state.compoundStages + 1;
+            state.connections = ['mesh', 'mesh', 'mesh'];
+          } else if (state.connections[0] === 'chain') {
             state.gearCount = 2;
             state.connections = ['chain', 'mesh', 'mesh'];
           }
           state.teeth = state.teeth.map(normalizeTeeth);
+          state.compoundTeeth = state.compoundTeeth.map(normalizeTeeth);
           updateControls();
           updateReadout();
           draw();
@@ -630,16 +688,26 @@
         function updateControls() {
           el.rpm0Val.textContent = formatRPM(readRpm());
           const chainDrive = state.gearCount === 2 && state.connections[0] === 'chain';
+          if (el.compoundMode) el.compoundMode.checked = state.compoundMode;
+          if (el.compoundOptions) el.compoundOptions.hidden = !state.compoundMode;
           el.countButtons.forEach((button) => {
             const count = Number(button.dataset.count);
             button.classList.toggle('active', count === state.gearCount);
-            button.disabled = chainDrive && count > 2;
+            button.disabled = state.compoundMode || (chainDrive && count > 2);
+          });
+          el.compoundStageButtons.forEach((button) => {
+            const stages = Number(button.dataset.compoundStages);
+            button.classList.toggle('active', state.compoundMode && stages === state.compoundStages);
           });
           document.querySelectorAll('[data-gear-row]').forEach((row) => {
             row.style.display = Number(row.dataset.gearRow) < state.gearCount ? 'block' : 'none';
           });
           document.querySelectorAll('[data-conn-row]').forEach((row) => {
             row.style.display = Number(row.dataset.connRow) < state.gearCount - 1 ? 'grid' : 'none';
+          });
+          document.querySelectorAll('[data-compound-row]').forEach((row) => {
+            const index = Number(row.dataset.compoundRow);
+            row.style.display = state.compoundMode && index < state.gearCount - 1 ? 'block' : 'none';
           });
           state.teeth.forEach((tooth, index) => {
             const val = document.getElementById(`teeth${index}Val`);
@@ -650,9 +718,21 @@
               input.value = tooth;
             }
           });
+          state.compoundTeeth.forEach((tooth, index) => {
+            const val = document.getElementById(`compoundTeeth${index}Val`);
+            const input = document.getElementById(`compoundTeeth${index}`);
+            if (val) val.textContent = tooth;
+            if (input) {
+              input.step = el.fineTeeth.checked ? '1' : '10';
+              input.value = tooth;
+            }
+          });
           state.connections.forEach((conn, index) => {
             const select = document.getElementById(`conn${index}`);
-            if (select) select.value = conn;
+            if (select) {
+              select.value = conn;
+              select.disabled = state.compoundMode;
+            }
           });
         }
 
@@ -663,7 +743,20 @@
           const ratios = computeRatios().ratios;
           const colors = ['#fbbf24', '#38bdf8', '#34d399', '#f472b6'];
           layout.positions.forEach((p, i) => {
-            drawGear(p.x, p.y, layout.radii[i], state.teeth[i], colors[i], state.driveAngle * ratios[i], GEAR_NAMES[i]);
+            const lowerRadius = Math.max(22, state.teeth[i] * Math.min(1.35, Math.max(0.72, (window.innerWidth - 900) / 360)));
+            drawGear(p.x, p.y, lowerRadius, state.teeth[i], colors[i], state.driveAngle * ratios[i], GEAR_NAMES[i]);
+            if (state.compoundMode && i < state.gearCount - 1) {
+              const upperRadius = Math.max(22, state.compoundTeeth[i] * Math.min(1.35, Math.max(0.72, (window.innerWidth - 900) / 360)));
+              drawGear(p.x, p.y - Math.max(lowerRadius, upperRadius) - 42, upperRadius, state.compoundTeeth[i], '#fde68a', state.driveAngle * ratios[i], `${GEAR_NAMES[i]}上`);
+              ctx.save();
+              ctx.strokeStyle = 'rgba(15,23,42,0.45)';
+              ctx.lineWidth = 3;
+              ctx.beginPath();
+              ctx.moveTo(p.x, p.y - lowerRadius * 0.15);
+              ctx.lineTo(p.x, p.y - Math.max(lowerRadius, upperRadius) - 42 + upperRadius * 0.15);
+              ctx.stroke();
+              ctx.restore();
+            }
           });
           layout.positions.slice(0, -1).forEach((p, i) => drawConnection(p, layout.positions[i + 1], state.connections[i]));
         }
@@ -690,7 +783,7 @@
         function makeLayout() {
           const teeth = state.teeth.slice(0, state.gearCount);
           const base = Math.min(1.35, Math.max(0.72, (window.innerWidth - 900) / 360));
-          const radii = teeth.map((tooth) => Math.max(22, tooth * base));
+          const radii = teeth.map((tooth, index) => Math.max(22, Math.max(tooth, state.compoundMode && index < state.gearCount - 1 ? state.compoundTeeth[index] : tooth) * base));
           const totalWidth = radii.reduce((sum, r) => sum + r * 2, 0) + Math.max(0, state.gearCount - 1) * 18;
           let x = Math.max(500, (window.innerWidth - totalWidth) / 2 + radii[0]);
           const y = Math.max(260, window.innerHeight * 0.46);
@@ -767,7 +860,7 @@
             ctx.font = '800 12px system-ui, sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(type === 'chain' ? '同方向' : '逆回転', (a.x + b.x) / 2, a.y - 18);
+            ctx.fillText(state.compoundMode ? '上段→次の下段' : type === 'chain' ? '同方向' : '逆回転', (a.x + b.x) / 2, a.y - 18);
           }
           ctx.restore();
         }
@@ -803,8 +896,8 @@
           el.formulaBox.style.display = showRatioDetails ? 'block' : 'none';
           el.infoHints.style.display = showRatioDetails ? 'block' : 'none';
           el.ratioBox.innerHTML = `<strong>最終出力：${formatSignedRatio(finalRatio)}</strong><div>回転方向：${finalRatio >= 0 ? 'Aと同じ向き' : 'Aと逆向き'}</div>`;
-          const connSummary = state.connections.slice(0, state.gearCount - 1).map((c, i) => `${GEAR_NAMES[i]}→${GEAR_NAMES[i + 1]}：${c === 'mesh' ? '噛み合い/逆' : 'チェーン/同'}`).join('　');
-          el.formulaBox.innerHTML = `<strong>接続方式</strong><br>${connSummary}`;
+          const connSummary = state.connections.slice(0, state.gearCount - 1).map((c, i) => state.compoundMode ? `${GEAR_NAMES[i]}上段${state.compoundTeeth[i]}歯 → ${GEAR_NAMES[i + 1]}下段${state.teeth[i + 1]}歯` : `${GEAR_NAMES[i]}→${GEAR_NAMES[i + 1]}：${c === 'mesh' ? '噛み合い/逆' : 'チェーン/同'}`).join('　');
+          el.formulaBox.innerHTML = `<strong>${state.compoundMode ? '二段歯車の倍率' : '接続方式'}</strong><br>${connSummary}`;
           draw();
         }
 
@@ -822,7 +915,8 @@
           const ratios = [1];
           for (let i = 0; i < state.gearCount - 1; i++) {
             const direction = state.connections[i] === 'mesh' ? -1 : 1;
-            ratios[i + 1] = ratios[i] * direction * state.teeth[i] / state.teeth[i + 1];
+            const driveTeeth = state.compoundMode ? state.compoundTeeth[i] : state.teeth[i];
+            ratios[i + 1] = ratios[i] * direction * driveTeeth / state.teeth[i + 1];
           }
           return { ratios };
         }
@@ -865,7 +959,7 @@
         ({ THREE, OrbitControls } = await loadThreeDependencies());
       } catch (error) {
         window.startGearSimFallback(error);
-        throw error;
+        await new Promise(() => {});
       }
 
       const TAU = Math.PI * 2;
@@ -912,7 +1006,7 @@
       throw new Error(`Unable to load Three.js dependencies. ${errors.join(' / ')}`);
     }
 
-      function importWithTimeout(url, timeoutMs = 2200) {
+      function importWithTimeout(url, timeoutMs = 10000) {
       return Promise.race([
         import(url),
         new Promise((_, reject) => {
@@ -928,6 +1022,9 @@
       gearControls: document.getElementById('gearControls'),
       connectionControls: document.getElementById('connectionControls'),
       fineTeeth: document.getElementById('fineTeeth'),
+      compoundMode: document.getElementById('compoundMode'),
+      compoundOptions: document.getElementById('compoundOptions'),
+      compoundStageButtons: Array.from(document.querySelectorAll('[data-compound-stages]')),
       rpm0: document.getElementById('rpm0'),
       rpm0Val: document.getElementById('rpm0Val'),
       playPause: document.getElementById('playPause'),
@@ -947,6 +1044,9 @@
     const state = {
       gearCount: 2,
       teeth: [20, 40, 30, 60],
+      compoundTeeth: [20, 20, 20, 20],
+      compoundMode: false,
+      compoundStages: 1,
       connections: ['mesh', 'mesh', 'mesh'],
       running: true,
       driveAngle: 0,
@@ -1037,6 +1137,14 @@
         });
       });
 
+      document.querySelectorAll('[data-compound-teeth-index]').forEach((input) => {
+        input.addEventListener('input', () => {
+          const index = Number(input.dataset.compoundTeethIndex);
+          state.compoundTeeth[index] = normalizeTeeth(Number(input.value));
+          rebuild();
+        });
+      });
+
       document.querySelectorAll('[data-conn-index]').forEach((select) => {
         select.value = state.connections[Number(select.dataset.connIndex)];
         select.addEventListener('change', () => {
@@ -1056,6 +1164,18 @@
           if (button.disabled) return;
           state.gearCount = Number(button.dataset.count);
           if (state.gearCount > 2) state.connections = ['mesh', 'mesh', 'mesh'];
+          rebuild();
+        });
+      });
+
+      el.compoundMode.addEventListener('change', () => {
+        state.compoundMode = el.compoundMode.checked;
+        rebuild();
+      });
+      el.compoundStageButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+          state.compoundStages = Number(button.dataset.compoundStages);
+          state.compoundMode = true;
           rebuild();
         });
       });
@@ -1101,13 +1221,14 @@
 
       for (let i = 0; i < conns.length; i++) {
         const direction = conns[i] === 'mesh' ? -1 : 1;
+        const driveTeeth = state.compoundMode ? state.compoundTeeth[i] : teeth[i];
         if (conns[i] === 'mesh') meshFlipCount += 1;
-        ratios[i + 1] = ratios[i] * direction * teeth[i] / teeth[i + 1];
+        ratios[i + 1] = ratios[i] * direction * driveTeeth / teeth[i + 1];
 
         if (conns[i] === 'mesh') {
-          phases[i + 1] = -phases[i] * teeth[i] / teeth[i + 1] + Math.PI - Math.PI / teeth[i + 1];
+          phases[i + 1] = -phases[i] * driveTeeth / teeth[i + 1] + Math.PI - Math.PI / teeth[i + 1];
         } else {
-          phases[i + 1] = phases[i] * teeth[i] / teeth[i + 1];
+          phases[i + 1] = phases[i] * driveTeeth / teeth[i + 1];
         }
       }
 
@@ -1121,11 +1242,16 @@
     }
 
     function rebuild() {
-      if (state.connections[0] === 'chain') {
+      if (state.compoundMode) {
+        state.compoundStages = Math.min(3, Math.max(1, state.compoundStages));
+        state.gearCount = state.compoundStages + 1;
+        state.connections = ['mesh', 'mesh', 'mesh'];
+      } else if (state.connections[0] === 'chain') {
         state.gearCount = 2;
         state.connections = ['chain', 'mesh', 'mesh'];
       }
       for (let i = 0; i < state.teeth.length; i++) state.teeth[i] = normalizeTeeth(state.teeth[i]);
+      for (let i = 0; i < state.compoundTeeth.length; i++) state.compoundTeeth[i] = normalizeTeeth(state.compoundTeeth[i]);
       el.rpm0.value = String(Math.round(Number(el.rpm0.value)));
       disposeWorld();
       state.gears = [];
@@ -1141,7 +1267,7 @@
 
       const teeth = activeTeeth();
       const conns = activeConnections();
-      const radii = teeth.map(pitchRadius);
+      const radii = teeth.map((tooth, index) => pitchRadius(Math.max(tooth, state.compoundMode && index < state.gearCount - 1 ? state.compoundTeeth[index] : tooth)));
       const positions = [];
       let x = 0;
       positions.push(new THREE.Vector3(x, 0, 0));
@@ -1157,15 +1283,31 @@
       positions.forEach((p) => { p.x += shift; });
 
       for (let i = 0; i < state.gearCount; i++) {
+        const shaft = new THREE.Group();
+        shaft.position.copy(positions[i]);
         const gear = createGear({
           name: GEAR_NAMES[i],
           teeth: teeth[i],
           color: GEAR_COLORS[i],
           accent: ACCENT_COLORS[i],
         });
-        gear.position.copy(positions[i]);
-        world.add(gear);
-        state.gears.push(gear);
+        gear.position.z = state.compoundMode && i < state.gearCount - 1 ? -0.44 : 0;
+        shaft.add(gear);
+
+        if (state.compoundMode && i < state.gearCount - 1) {
+          const upper = createGear({
+            name: `${GEAR_NAMES[i]}上`,
+            teeth: state.compoundTeeth[i],
+            color: 0xfde68a,
+            accent: ACCENT_COLORS[i],
+          });
+          upper.scale.setScalar(0.92);
+          upper.position.z = 0.58;
+          shaft.add(upper);
+        }
+
+        world.add(shaft);
+        state.gears.push(shaft);
 
         const labelY = radii[i] + 0.78;
         addDomLabel({
@@ -1652,234 +1794,6 @@
       return (right - left) * (bottom - top);
     }
 
-    function findReadableLabelPosition(item, preferredX, preferredY, placedRects) {
-      const width = Math.max(1, item.element.offsetWidth);
-      const height = Math.max(1, item.element.offsetHeight);
-      const margin = 8;
-      const safeLeft = margin;
-      const safeTop = margin;
-      const safeRight = window.innerWidth - margin;
-      const safeBottom = window.innerHeight - margin;
-      const offsets = item.type === 'ratio'
-        ? [
-            [0, 0], [0, -34], [0, -68], [0, -102],
-            [-44, -34], [44, -34], [-88, -68], [88, -68],
-            [-44, 34], [44, 34], [0, 34], [0, 68],
-          ]
-        : [
-            [0, 0], [0, 34], [0, -34],
-            [-48, 0], [48, 0], [-48, 34], [48, 34],
-          ];
-
-      let best = null;
-      let bestPenalty = Number.POSITIVE_INFINITY;
-      for (const [dx, dy] of offsets) {
-        const x = THREE.MathUtils.clamp(preferredX + dx, safeLeft + width / 2, safeRight - width / 2);
-        const y = THREE.MathUtils.clamp(preferredY + dy, safeTop + height / 2, safeBottom - height / 2);
-        const rect = makeLabelRect(x, y, width, height);
-        const overlap = placedRects.reduce((sum, placed) => sum + overlapArea(rect, placed, margin), 0);
-        const penalty = overlap * 1000 + Math.abs(dx) + Math.abs(dy) * 1.2;
-        if (overlap === 0) return { x, y, rect };
-        if (penalty < bestPenalty) {
-          bestPenalty = penalty;
-          best = { x, y, rect };
-        }
-      }
-      return best;
-    }
-
-    function makeLabelRect(centerX, centerY, width, height) {
-      return {
-        left: centerX - width / 2,
-        right: centerX + width / 2,
-        top: centerY - height / 2,
-        bottom: centerY + height / 2,
-      };
-    }
-
-    function overlapArea(a, b, padding = 0) {
-      const left = Math.max(a.left - padding, b.left - padding);
-      const right = Math.min(a.right + padding, b.right + padding);
-      const top = Math.max(a.top - padding, b.top - padding);
-      const bottom = Math.min(a.bottom + padding, b.bottom + padding);
-      if (right <= left || bottom <= top) return 0;
-      return (right - left) * (bottom - top);
-    }
-
-    function shouldShowFloatingRatioLabels() {
-      return el.showRatios.checked && state.gearCount <= 2;
-    }
-
-    function findReadableLabelPosition(item, preferredX, preferredY, placedRects) {
-      const width = Math.max(1, item.element.offsetWidth);
-      const height = Math.max(1, item.element.offsetHeight);
-      const margin = 8;
-      const safeLeft = margin;
-      const safeTop = margin;
-      const safeRight = window.innerWidth - margin;
-      const safeBottom = window.innerHeight - margin;
-      const offsets = item.type === 'ratio'
-        ? [
-            [0, 0], [0, -34], [0, -68], [0, -102],
-            [-44, -34], [44, -34], [-88, -68], [88, -68],
-            [-44, 34], [44, 34], [0, 34], [0, 68],
-          ]
-        : [
-            [0, 0], [0, 34], [0, -34],
-            [-48, 0], [48, 0], [-48, 34], [48, 34],
-          ];
-
-      let best = null;
-      let bestPenalty = Number.POSITIVE_INFINITY;
-      for (const [dx, dy] of offsets) {
-        const x = THREE.MathUtils.clamp(preferredX + dx, safeLeft + width / 2, safeRight - width / 2);
-        const y = THREE.MathUtils.clamp(preferredY + dy, safeTop + height / 2, safeBottom - height / 2);
-        const rect = makeLabelRect(x, y, width, height);
-        const overlap = placedRects.reduce((sum, placed) => sum + overlapArea(rect, placed, margin), 0);
-        const penalty = overlap * 1000 + Math.abs(dx) + Math.abs(dy) * 1.2;
-        if (overlap === 0) return { x, y, rect };
-        if (penalty < bestPenalty) {
-          bestPenalty = penalty;
-          best = { x, y, rect };
-        }
-      }
-      return best;
-    }
-
-    function makeLabelRect(centerX, centerY, width, height) {
-      return {
-        left: centerX - width / 2,
-        right: centerX + width / 2,
-        top: centerY - height / 2,
-        bottom: centerY + height / 2,
-      };
-    }
-
-    function overlapArea(a, b, padding = 0) {
-      const left = Math.max(a.left - padding, b.left - padding);
-      const right = Math.min(a.right + padding, b.right + padding);
-      const top = Math.max(a.top - padding, b.top - padding);
-      const bottom = Math.min(a.bottom + padding, b.bottom + padding);
-      if (right <= left || bottom <= top) return 0;
-      return (right - left) * (bottom - top);
-    }
-
-    function shouldShowFloatingRatioLabels() {
-      return el.showRatios.checked && state.gearCount <= 2;
-    }
-
-    function findReadableLabelPosition(item, preferredX, preferredY, placedRects) {
-      const width = Math.max(1, item.element.offsetWidth);
-      const height = Math.max(1, item.element.offsetHeight);
-      const margin = 8;
-      const safeLeft = margin;
-      const safeTop = margin;
-      const safeRight = window.innerWidth - margin;
-      const safeBottom = window.innerHeight - margin;
-      const offsets = item.type === 'ratio'
-        ? [
-            [0, 0], [0, -34], [0, -68], [0, -102],
-            [-44, -34], [44, -34], [-88, -68], [88, -68],
-            [-44, 34], [44, 34], [0, 34], [0, 68],
-          ]
-        : [
-            [0, 0], [0, 34], [0, -34],
-            [-48, 0], [48, 0], [-48, 34], [48, 34],
-          ];
-
-      let best = null;
-      let bestPenalty = Number.POSITIVE_INFINITY;
-      for (const [dx, dy] of offsets) {
-        const x = THREE.MathUtils.clamp(preferredX + dx, safeLeft + width / 2, safeRight - width / 2);
-        const y = THREE.MathUtils.clamp(preferredY + dy, safeTop + height / 2, safeBottom - height / 2);
-        const rect = makeLabelRect(x, y, width, height);
-        const overlap = placedRects.reduce((sum, placed) => sum + overlapArea(rect, placed, margin), 0);
-        const penalty = overlap * 1000 + Math.abs(dx) + Math.abs(dy) * 1.2;
-        if (overlap === 0) return { x, y, rect };
-        if (penalty < bestPenalty) {
-          bestPenalty = penalty;
-          best = { x, y, rect };
-        }
-      }
-      return best;
-    }
-
-    function makeLabelRect(centerX, centerY, width, height) {
-      return {
-        left: centerX - width / 2,
-        right: centerX + width / 2,
-        top: centerY - height / 2,
-        bottom: centerY + height / 2,
-      };
-    }
-
-    function overlapArea(a, b, padding = 0) {
-      const left = Math.max(a.left - padding, b.left - padding);
-      const right = Math.min(a.right + padding, b.right + padding);
-      const top = Math.max(a.top - padding, b.top - padding);
-      const bottom = Math.min(a.bottom + padding, b.bottom + padding);
-      if (right <= left || bottom <= top) return 0;
-      return (right - left) * (bottom - top);
-    }
-
-    function shouldShowFloatingRatioLabels() {
-      return el.showRatios.checked && state.gearCount <= 2;
-    }
-
-    function findReadableLabelPosition(item, preferredX, preferredY, placedRects) {
-      const width = Math.max(1, item.element.offsetWidth);
-      const height = Math.max(1, item.element.offsetHeight);
-      const margin = 8;
-      const safeLeft = margin;
-      const safeTop = margin;
-      const safeRight = window.innerWidth - margin;
-      const safeBottom = window.innerHeight - margin;
-      const offsets = item.type === 'ratio'
-        ? [
-            [0, 0], [0, -34], [0, -68], [0, -102],
-            [-44, -34], [44, -34], [-88, -68], [88, -68],
-            [-44, 34], [44, 34], [0, 34], [0, 68],
-          ]
-        : [
-            [0, 0], [0, 34], [0, -34],
-            [-48, 0], [48, 0], [-48, 34], [48, 34],
-          ];
-
-      let best = null;
-      let bestPenalty = Number.POSITIVE_INFINITY;
-      for (const [dx, dy] of offsets) {
-        const x = THREE.MathUtils.clamp(preferredX + dx, safeLeft + width / 2, safeRight - width / 2);
-        const y = THREE.MathUtils.clamp(preferredY + dy, safeTop + height / 2, safeBottom - height / 2);
-        const rect = makeLabelRect(x, y, width, height);
-        const overlap = placedRects.reduce((sum, placed) => sum + overlapArea(rect, placed, margin), 0);
-        const penalty = overlap * 1000 + Math.abs(dx) + Math.abs(dy) * 1.2;
-        if (overlap === 0) return { x, y, rect };
-        if (penalty < bestPenalty) {
-          bestPenalty = penalty;
-          best = { x, y, rect };
-        }
-      }
-      return best;
-    }
-
-    function makeLabelRect(centerX, centerY, width, height) {
-      return {
-        left: centerX - width / 2,
-        right: centerX + width / 2,
-        top: centerY - height / 2,
-        bottom: centerY + height / 2,
-      };
-    }
-
-    function overlapArea(a, b, padding = 0) {
-      const left = Math.max(a.left - padding, b.left - padding);
-      const right = Math.min(a.right + padding, b.right + padding);
-      const top = Math.max(a.top - padding, b.top - padding);
-      const bottom = Math.min(a.bottom + padding, b.bottom + padding);
-      if (right <= left || bottom <= top) return 0;
-      return (right - left) * (bottom - top);
-    }
-
     function shouldShowFloatingRatioLabels() {
       return el.showRatios.checked && state.gearCount <= 2;
     }
@@ -1887,11 +1801,17 @@
     function updateControlVisibility() {
       el.rpm0Val.textContent = formatRPM(readRpm());
       const chainDrive = isChainDrive();
+      if (el.compoundMode) el.compoundMode.checked = state.compoundMode;
+      if (el.compoundOptions) el.compoundOptions.hidden = !state.compoundMode;
       el.countButtons.forEach((button) => {
         const count = Number(button.dataset.count);
         button.classList.toggle('active', count === state.gearCount);
-        button.disabled = chainDrive && count > 2;
-        button.title = button.disabled ? 'チェーン駆動は2枚構成だけです。接続方法を「噛み合い」に戻すと選べます。' : '';
+        button.disabled = state.compoundMode || (chainDrive && count > 2);
+        button.title = state.compoundMode ? '二段歯車では段数で歯車数が決まります。' : button.disabled ? 'チェーン駆動は2枚構成だけです。接続方法を「噛み合い」に戻すと選べます。' : '';
+      });
+      el.compoundStageButtons.forEach((button) => {
+        const stages = Number(button.dataset.compoundStages);
+        button.classList.toggle('active', state.compoundMode && stages === state.compoundStages);
       });
 
       document.querySelectorAll('[data-gear-row]').forEach((row) => {
@@ -1902,6 +1822,10 @@
         const index = Number(row.dataset.connRow);
         row.style.display = index < state.gearCount - 1 ? 'grid' : 'none';
       });
+      document.querySelectorAll('[data-compound-row]').forEach((row) => {
+        const index = Number(row.dataset.compoundRow);
+        row.style.display = state.compoundMode && index < state.gearCount - 1 ? 'block' : 'none';
+      });
 
       for (let i = 0; i < 4; i++) {
         const val = document.getElementById(`teeth${i}Val`);
@@ -1909,10 +1833,16 @@
         if (input) input.step = el.fineTeeth.checked ? '1' : '10';
         if (val) val.textContent = state.teeth[i];
         if (input && Number(input.value) !== state.teeth[i]) input.value = state.teeth[i];
+        const compoundVal = document.getElementById(`compoundTeeth${i}Val`);
+        const compoundInput = document.getElementById(`compoundTeeth${i}`);
+        if (compoundInput) compoundInput.step = el.fineTeeth.checked ? '1' : '10';
+        if (compoundVal) compoundVal.textContent = state.compoundTeeth[i];
+        if (compoundInput && Number(compoundInput.value) !== state.compoundTeeth[i]) compoundInput.value = state.compoundTeeth[i];
       }
       for (let i = 0; i < 3; i++) {
         const select = document.getElementById(`conn${i}`);
         if (select && select.value !== state.connections[i]) select.value = state.connections[i];
+        if (select) select.disabled = state.compoundMode;
       }
     }
 
@@ -1945,7 +1875,7 @@
       const maxVal = Math.max(1, finalAbs);
       const inputWidth = Math.max(5, (1 / maxVal) * 100);
       const outputWidth = Math.max(5, (finalAbs / maxVal) * 100);
-      const finalText = finalSpeedText(state.teeth[0], finalTeeth);
+      const finalText = state.compoundMode ? `出力は入力の ${formatRatioNumber(finalAbs)} 倍速` : finalSpeedText(state.teeth[0], finalTeeth);
       el.ratioBox.style.display = showRatioDetails ? 'grid' : 'none';
       el.ratioBox.innerHTML = `
         <strong>駆動Aに対する最終被動${GEAR_NAMES[finalIndex]}の速さ</strong>
@@ -1954,10 +1884,16 @@
         <div class="bar-row"><span>${GEAR_NAMES[finalIndex]}出力</span><div class="bar-track"><div class="bar-fill" style="width:${outputWidth}%"></div></div><span>${formatRatioNumber(finalAbs)}倍</span></div>
       `;
 
-      const connSummary = conns.map((c, i) => `${GEAR_NAMES[i]}→${GEAR_NAMES[i + 1]}：${c === 'mesh' ? '噛み合い/逆' : 'チェーン/同'}`).join('　');
+      const connSummary = conns.map((c, i) => state.compoundMode ? `${GEAR_NAMES[i]}上段${state.compoundTeeth[i]}歯 → ${GEAR_NAMES[i + 1]}下段${state.teeth[i + 1]}歯` : `${GEAR_NAMES[i]}→${GEAR_NAMES[i + 1]}：${c === 'mesh' ? '噛み合い/逆' : 'チェーン/同'}`).join('　');
       el.formulaBox.style.display = showRatioDetails ? 'block' : 'none';
       el.infoHints.style.display = showRatioDetails ? 'block' : 'none';
-      el.formulaBox.innerHTML = `
+      el.formulaBox.innerHTML = state.compoundMode ? `
+        <strong>二段歯車の関係式</strong><br>
+        各軸では下段歯車と上段歯車が同じ回転数で回り、上段歯車が次の軸の下段歯車を回します。<br>
+        各段では <code>次のrpm = 前のrpm × 上段の歯数 ÷ 次の下段の歯数</code>。<br>
+        この構成：${connSummary}<br>
+        倍率が段ごとに掛け算されるため、段数を増やすほど大きく増速・減速できます。最終出力はAと<strong>${finalRatio >= 0 ? '同じ向き' : '逆向き'}</strong>です。
+      ` : `
         <strong>関係式</strong><br>
         隣り合う接続では <code>次のrpm = 前のrpm × 前の歯数 ÷ 次の歯数</code>。<br>
         ただし、噛み合いは符号が反転し、チェーンは同じ向きのままです。<br>
@@ -1973,7 +1909,7 @@
       const conns = activeConnections();
       const items = [];
       for (let i = 0; i < conns.length; i++) {
-        items.push(`${GEAR_NAMES[i]}→${GEAR_NAMES[i + 1]} ${conns[i] === 'mesh' ? '噛み合い：逆回転' : 'チェーン：同方向'}`);
+        items.push(state.compoundMode ? `${GEAR_NAMES[i]}上段 → ${GEAR_NAMES[i + 1]}下段` : `${GEAR_NAMES[i]}→${GEAR_NAMES[i + 1]} ${conns[i] === 'mesh' ? '噛み合い：逆回転' : 'チェーン：同方向'}`);
       }
       const ratios = computeRatios().ratios;
       const final = ratios[state.gearCount - 1];
