@@ -1249,7 +1249,10 @@
     function buildCompoundTopology(ratios = null, phases = null) {
       const shaftCount = state.gearCount;
       const meshCount = shaftCount - 1;
-      const planeZ = [-0.62, 0.62, -0.62];
+      const meshLayerZ = Array.from(
+        { length: meshCount },
+        (_, index) => (index - (meshCount - 1) / 2) * 1.24
+      );
       const shafts = [];
       const meshes = [];
 
@@ -1259,7 +1262,7 @@
         role: 'single',
         label: compoundGearLabel(0),
         teeth: state.teeth[0],
-        z: planeZ[0],
+        z: meshLayerZ[0],
         color: GEAR_COLORS[0],
         accent: ACCENT_COLORS[0],
       });
@@ -1269,7 +1272,7 @@
           role: 'input',
           label: compoundGearLabel(i, 'input'),
           teeth: state.compoundTeeth[i],
-          z: planeZ[i - 1],
+          z: meshLayerZ[i - 1],
           color: 0xfde68a,
           accent: ACCENT_COLORS[i],
         });
@@ -1277,7 +1280,7 @@
           role: 'output',
           label: compoundGearLabel(i, 'output'),
           teeth: state.teeth[i],
-          z: planeZ[i],
+          z: meshLayerZ[i],
           color: GEAR_COLORS[i],
           accent: ACCENT_COLORS[i],
         });
@@ -1287,7 +1290,7 @@
         role: 'single',
         label: compoundGearLabel(shaftCount - 1),
         teeth: state.teeth[shaftCount - 1],
-        z: planeZ[meshCount - 1],
+        z: meshLayerZ[meshCount - 1],
         color: GEAR_COLORS[shaftCount - 1],
         accent: ACCENT_COLORS[shaftCount - 1],
       });
@@ -1296,7 +1299,7 @@
       shafts[0].x = x;
       for (let i = 0; i < meshCount; i++) {
         const { driverTeeth, drivenTeeth } = compoundMeshSpec(i);
-        const z = planeZ[i];
+        const z = meshLayerZ[i];
         const distance = pitchRadius(driverTeeth) + pitchRadius(drivenTeeth) + 0.08;
         x += distance;
         shafts[i + 1].x = x;
