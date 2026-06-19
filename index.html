@@ -578,17 +578,36 @@
           draw();
         });
 
+        function compoundOutputControlLabel(index) {
+          if (index === 0) return 'A：駆動歯車の歯数';
+          if (!state.compoundMode) return `${GEAR_NAMES[index]}：${index === 3 ? '最終被動歯車' : '歯車'}の歯数`;
+          if (index === state.gearCount - 1) return `${GEAR_NAMES[index]}：最終被動歯車の歯数`;
+          return `${GEAR_NAMES[index]}2：${GEAR_NAMES[index + 1]}へ渡す歯車の歯数`;
+        }
+
+        function compoundInputControlLabel(index) {
+          if (index <= 0 || index >= state.gearCount - 1) return `${GEAR_NAMES[index]}1：入力側歯車の歯数`;
+          const from = index === 1 ? 'A' : `${GEAR_NAMES[index - 1]}2`;
+          return `${GEAR_NAMES[index]}1：${from}から受ける歯車の歯数`;
+        }
+
+        function compoundFormulaText(finalIndex) {
+          if (finalIndex === 3) return '<code>倍率 = -(A歯数 ÷ B1歯数) × (B2歯数 ÷ C1歯数) × (C2歯数 ÷ D歯数)</code>';
+          if (finalIndex === 2) return '<code>倍率 = (A歯数 ÷ B1歯数) × (B2歯数 ÷ C歯数)</code>';
+          return '<code>倍率 = -(A歯数 ÷ B歯数)</code>';
+        }
+
         function buildControls() {
           el.gearControls.innerHTML = GEAR_NAMES.map((name, index) => `
             <div class="control gear-control" data-gear-row="${index}">
               <div class="control-head">
-                <label for="teeth${index}">${name}：${index === 0 ? '駆動輪' : index === 3 ? '最終被動輪' : '歯車'}の歯数</label>
+                <label for="teeth${index}">${compoundOutputControlLabel(index)}</label>
                 <span class="value"><span id="teeth${index}Val">${state.teeth[index]}</span> 歯</span>
               </div>
               <input id="teeth${index}" data-teeth-index="${index}" type="range" min="10" max="100" step="10" value="${state.teeth[index]}">
               <div class="control" data-compound-row="${index}">
                 <div class="control-head">
-                  <label for="compoundTeeth${index}">${name}1：入力側歯車の歯数</label>
+                  <label for="compoundTeeth${index}">${compoundInputControlLabel(index)}</label>
                   <span class="value"><span id="compoundTeeth${index}Val">${state.compoundTeeth[index]}</span> 歯</span>
                 </div>
                 <input id="compoundTeeth${index}" data-compound-teeth-index="${index}" type="range" min="10" max="100" step="10" value="${state.compoundTeeth[index]}">
@@ -700,14 +719,19 @@
             button.classList.toggle('active', state.compoundMode && stages === state.compoundStages);
           });
           document.querySelectorAll('[data-gear-row]').forEach((row) => {
-            row.style.display = Number(row.dataset.gearRow) < state.gearCount ? 'block' : 'none';
+            const index = Number(row.dataset.gearRow);
+            const label = row.querySelector('.control-head > label');
+            if (label) label.textContent = compoundOutputControlLabel(index);
+            row.style.display = index < state.gearCount ? 'block' : 'none';
           });
           document.querySelectorAll('[data-conn-row]').forEach((row) => {
             row.style.display = Number(row.dataset.connRow) < state.gearCount - 1 ? 'grid' : 'none';
           });
           document.querySelectorAll('[data-compound-row]').forEach((row) => {
             const index = Number(row.dataset.compoundRow);
-            row.style.display = state.compoundMode && index > 0 && index < state.gearCount ? 'block' : 'none';
+            const label = row.querySelector('label');
+            if (label) label.textContent = compoundInputControlLabel(index);
+            row.style.display = state.compoundMode && index > 0 && index < state.gearCount - 1 ? 'block' : 'none';
           });
           state.teeth.forEach((tooth, index) => {
             const val = document.getElementById(`teeth${index}Val`);
@@ -909,7 +933,9 @@
           el.infoHints.style.display = showRatioDetails ? 'block' : 'none';
           el.ratioBox.innerHTML = `<strong>最終出力：${formatSignedRatio(finalRatio)}</strong><div>回転方向：${finalRatio >= 0 ? 'Aと同じ向き' : 'Aと逆向き'}</div>`;
           const connSummary = state.connections.slice(0, state.gearCount - 1).map((c, i) => state.compoundMode ? `${GEAR_NAMES[i]}${i === 0 ? '' : '下段'}${state.teeth[i]}歯 → ${GEAR_NAMES[i + 1]}${i + 1 === state.gearCount - 1 ? '' : '上段'}${i + 1 === state.gearCount - 1 ? state.teeth[i + 1] : state.compoundTeeth[i + 1]}歯` : `${GEAR_NAMES[i]}→${GEAR_NAMES[i + 1]}：${c === 'mesh' ? '噛み合い/逆' : 'チェーン/同'}`).join('　');
-          el.formulaBox.innerHTML = `<strong>${state.compoundMode ? '二段歯車の倍率' : '接続方式'}</strong><br>${connSummary}`;
+          el.formulaBox.innerHTML = state.compoundMode
+            ? `<strong>二段歯車の倍率</strong><br>${compoundFormulaText(finalIndex)}<br>${connSummary}`
+            : `<strong>接続方式</strong><br>${connSummary}`;
           draw();
         }
 
@@ -1122,17 +1148,36 @@
       scene.add(rim);
     }
 
+    function compoundOutputControlLabel(index) {
+      if (index === 0) return 'A：駆動歯車の歯数';
+      if (!state.compoundMode) return `${GEAR_NAMES[index]}：${index === 3 ? '最終被動歯車' : '歯車'}の歯数`;
+      if (index === state.gearCount - 1) return `${GEAR_NAMES[index]}：最終被動歯車の歯数`;
+      return `${GEAR_NAMES[index]}2：${GEAR_NAMES[index + 1]}へ渡す歯車の歯数`;
+    }
+
+    function compoundInputControlLabel(index) {
+      if (index <= 0 || index >= state.gearCount - 1) return `${GEAR_NAMES[index]}1：入力側歯車の歯数`;
+      const from = index === 1 ? 'A' : `${GEAR_NAMES[index - 1]}2`;
+      return `${GEAR_NAMES[index]}1：${from}から受ける歯車の歯数`;
+    }
+
+    function compoundFormulaText(finalIndex) {
+      if (finalIndex === 3) return '<code>倍率 = -(A歯数 ÷ B1歯数) × (B2歯数 ÷ C1歯数) × (C2歯数 ÷ D歯数)</code>';
+      if (finalIndex === 2) return '<code>倍率 = (A歯数 ÷ B1歯数) × (B2歯数 ÷ C歯数)</code>';
+      return '<code>倍率 = -(A歯数 ÷ B歯数)</code>';
+    }
+
     function buildControlDom() {
       el.gearControls.innerHTML = GEAR_NAMES.map((name, index) => `
         <div class="control gear-control" data-gear-row="${index}">
           <div class="control-head">
-            <label for="teeth${index}">${name}：${index === 0 ? '駆動輪' : index === 3 ? '最終被動輪' : '歯車'}の歯数</label>
+            <label for="teeth${index}">${compoundOutputControlLabel(index)}</label>
             <span class="value"><span id="teeth${index}Val">${state.teeth[index]}</span> 歯</span>
           </div>
           <input id="teeth${index}" data-teeth-index="${index}" type="range" min="10" max="100" step="10" value="${state.teeth[index]}">
           <div class="control" data-compound-row="${index}">
             <div class="control-head">
-              <label for="compoundTeeth${index}">${name}1：入力側歯車の歯数</label>
+              <label for="compoundTeeth${index}">${compoundInputControlLabel(index)}</label>
               <span class="value"><span id="compoundTeeth${index}Val">${state.compoundTeeth[index]}</span> 歯</span>
             </div>
             <input id="compoundTeeth${index}" data-compound-teeth-index="${index}" type="range" min="10" max="100" step="10" value="${state.compoundTeeth[index]}">
@@ -1968,6 +2013,8 @@
 
       document.querySelectorAll('[data-gear-row]').forEach((row) => {
         const index = Number(row.dataset.gearRow);
+        const label = row.querySelector('.control-head > label');
+        if (label) label.textContent = compoundOutputControlLabel(index);
         row.style.display = index < state.gearCount ? 'block' : 'none';
       });
       document.querySelectorAll('[data-conn-row]').forEach((row) => {
@@ -1976,7 +2023,9 @@
       });
       document.querySelectorAll('[data-compound-row]').forEach((row) => {
         const index = Number(row.dataset.compoundRow);
-        row.style.display = state.compoundMode && index > 0 && index < state.gearCount ? 'block' : 'none';
+        const label = row.querySelector('label');
+        if (label) label.textContent = compoundInputControlLabel(index);
+        row.style.display = state.compoundMode && index > 0 && index < state.gearCount - 1 ? 'block' : 'none';
       });
 
       for (let i = 0; i < 4; i++) {
@@ -2054,7 +2103,7 @@
       el.formulaBox.innerHTML = state.compoundMode ? `
         <strong>二段歯車の関係式</strong><br>
         各中央軸では、入力側歯車（B1/C1）と出力側歯車（B2/C2）が同じ中心座標に固定され、同じ回転数・同じ向きで回ります。<br>
-        2段では <code>rpmC = rpmA × (A歯数 ÷ B1歯数) × (B2歯数 ÷ C歯数)</code>、3段では各噛み合いの歯数比をさらに掛けます。<br>
+        ${compoundFormulaText(finalIndex)}<br>
         この構成：${connSummary}<br>
         倍率は噛み合いごとに掛け合わせ、同軸部分では変化しません。最終出力はAと<strong>${finalRatio >= 0 ? '同じ向き' : '逆向き'}</strong>です。
       ` : `
