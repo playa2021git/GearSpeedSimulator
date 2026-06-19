@@ -465,7 +465,7 @@
           <button class="mode-button" data-compound-stages="2" type="button">2段</button>
           <button class="mode-button" data-compound-stages="3" type="button">3段</button>
         </div>
-        <div class="compound-note">1枚目は通常歯車のまま、2〜4枚目に追加した上段の被動歯車へ順番に噛み合わせます。段数を増やすと倍率が掛け算で積み重なります。</div>
+        <div class="compound-note">軸Aから始まり、中央軸では入力側歯車（B1/C1）と出力側歯車（B2/C2）が同軸で回ります。段数を増やすと噛み合いごとの倍率が掛け算で積み重なります。</div>
       </div>
     </section>
 
@@ -588,7 +588,7 @@
               <input id="teeth${index}" data-teeth-index="${index}" type="range" min="10" max="100" step="10" value="${state.teeth[index]}">
               <div class="control" data-compound-row="${index}">
                 <div class="control-head">
-                  <label for="compoundTeeth${index}">${name}上段：前から受ける歯数</label>
+                  <label for="compoundTeeth${index}">${name}1：入力側歯車の歯数</label>
                   <span class="value"><span id="compoundTeeth${index}Val">${state.compoundTeeth[index]}</span> 歯</span>
                 </div>
                 <input id="compoundTeeth${index}" data-compound-teeth-index="${index}" type="range" min="10" max="100" step="10" value="${state.compoundTeeth[index]}">
@@ -860,7 +860,7 @@
             ctx.font = '800 12px system-ui, sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(state.compoundMode ? '下段→次の上段' : type === 'chain' ? '同方向' : '逆回転', (a.x + b.x) / 2, a.y - 18);
+            ctx.fillText(state.compoundMode ? '出力側→次の入力側' : type === 'chain' ? '同方向' : '逆回転', (a.x + b.x) / 2, a.y - 18);
           }
           ctx.restore();
         }
@@ -884,19 +884,31 @@
           el.speedHead.innerHTML = showRatioDetails
             ? '<tr><th>歯車</th><th>歯数</th><th>倍率</th><th>回転数</th></tr>'
             : '<tr><th>歯車</th><th>歯数</th><th>回転数</th></tr>';
-          el.speedBody.innerHTML = teeth.map((tooth, i) => `
-            <tr>
-              <td>${GEAR_NAMES[i]} ${i === 0 ? '駆動' : i === finalIndex ? '被動' : '中間'}<br><span class="small-note">${directionText(rpms[i])}</span></td>
-              <td>${tooth}</td>
-              ${showRatioDetails ? `<td>${formatSignedRatio(ratios[i])}</td>` : ''}
-              <td>${formatRPM(Math.abs(rpms[i]))} rpm</td>
-            </tr>
-          `).join('');
+          if (state.compoundMode) {
+            const rows = [
+              `<tr><td>A 駆動歯車<br><span class="small-note">${directionText(rpms[0])}</span></td><td>${state.teeth[0]}</td>${showRatioDetails ? '<td>1倍</td>' : ''}<td>${formatRPM(Math.abs(rpms[0]))} rpm</td></tr>`
+            ];
+            for (let shaft = 1; shaft < finalIndex; shaft++) {
+              rows.push(`<tr><td>${GEAR_NAMES[shaft]}1 中央入力歯車<br><span class="small-note">${directionText(rpms[shaft])}</span></td><td>${state.compoundTeeth[shaft]}</td>${showRatioDetails ? `<td>${formatSignedRatio(ratios[shaft])}</td>` : ''}<td>${formatRPM(Math.abs(rpms[shaft]))} rpm</td></tr>`);
+              rows.push(`<tr><td>${GEAR_NAMES[shaft]}2 同軸出力歯車<br><span class="small-note">${directionText(rpms[shaft])}</span></td><td>${state.teeth[shaft]}</td>${showRatioDetails ? '<td>同じ軸</td>' : ''}<td>${formatRPM(Math.abs(rpms[shaft]))} rpm</td></tr>`);
+            }
+            rows.push(`<tr><td>${GEAR_NAMES[finalIndex]} 従動歯車<br><span class="small-note">${directionText(rpms[finalIndex])}</span></td><td>${state.teeth[finalIndex]}</td>${showRatioDetails ? `<td>総合 ${formatSignedRatio(finalRatio)}</td>` : ''}<td>${formatRPM(Math.abs(rpms[finalIndex]))} rpm</td></tr>`);
+            el.speedBody.innerHTML = rows.join('');
+          } else {
+            el.speedBody.innerHTML = teeth.map((tooth, i) => `
+              <tr>
+                <td>${GEAR_NAMES[i]} ${i === 0 ? '駆動' : i === finalIndex ? '被動' : '中間'}<br><span class="small-note">${directionText(rpms[i])}</span></td>
+                <td>${tooth}</td>
+                ${showRatioDetails ? `<td>${formatSignedRatio(ratios[i])}</td>` : ''}
+                <td>${formatRPM(Math.abs(rpms[i]))} rpm</td>
+              </tr>
+            `).join('');
+          }
           el.ratioBox.style.display = showRatioDetails ? 'grid' : 'none';
           el.formulaBox.style.display = showRatioDetails ? 'block' : 'none';
           el.infoHints.style.display = showRatioDetails ? 'block' : 'none';
           el.ratioBox.innerHTML = `<strong>最終出力：${formatSignedRatio(finalRatio)}</strong><div>回転方向：${finalRatio >= 0 ? 'Aと同じ向き' : 'Aと逆向き'}</div>`;
-          const connSummary = state.connections.slice(0, state.gearCount - 1).map((c, i) => state.compoundMode ? `${GEAR_NAMES[i]}下段${state.teeth[i]}歯 → ${GEAR_NAMES[i + 1]}上段${state.compoundTeeth[i + 1]}歯` : `${GEAR_NAMES[i]}→${GEAR_NAMES[i + 1]}：${c === 'mesh' ? '噛み合い/逆' : 'チェーン/同'}`).join('　');
+          const connSummary = state.connections.slice(0, state.gearCount - 1).map((c, i) => state.compoundMode ? `${GEAR_NAMES[i]}${i === 0 ? '' : '下段'}${state.teeth[i]}歯 → ${GEAR_NAMES[i + 1]}${i + 1 === state.gearCount - 1 ? '' : '上段'}${i + 1 === state.gearCount - 1 ? state.teeth[i + 1] : state.compoundTeeth[i + 1]}歯` : `${GEAR_NAMES[i]}→${GEAR_NAMES[i + 1]}：${c === 'mesh' ? '噛み合い/逆' : 'チェーン/同'}`).join('　');
           el.formulaBox.innerHTML = `<strong>${state.compoundMode ? '二段歯車の倍率' : '接続方式'}</strong><br>${connSummary}`;
           draw();
         }
@@ -916,7 +928,8 @@
           for (let i = 0; i < state.gearCount - 1; i++) {
             const direction = state.connections[i] === 'mesh' ? -1 : 1;
             const driveTeeth = state.teeth[i];
-            const drivenTeeth = state.compoundMode ? state.compoundTeeth[i + 1] : state.teeth[i + 1];
+            const isCompoundFinal = state.compoundMode && i + 1 === state.gearCount - 1;
+            const drivenTeeth = state.compoundMode && !isCompoundFinal ? state.compoundTeeth[i + 1] : state.teeth[i + 1];
             ratios[i + 1] = ratios[i] * direction * driveTeeth / drivenTeeth;
           }
           return { ratios };
@@ -1117,6 +1130,13 @@
             <span class="value"><span id="teeth${index}Val">${state.teeth[index]}</span> 歯</span>
           </div>
           <input id="teeth${index}" data-teeth-index="${index}" type="range" min="10" max="100" step="10" value="${state.teeth[index]}">
+          <div class="control" data-compound-row="${index}">
+            <div class="control-head">
+              <label for="compoundTeeth${index}">${name}1：入力側歯車の歯数</label>
+              <span class="value"><span id="compoundTeeth${index}Val">${state.compoundTeeth[index]}</span> 歯</span>
+            </div>
+            <input id="compoundTeeth${index}" data-compound-teeth-index="${index}" type="range" min="10" max="100" step="10" value="${state.compoundTeeth[index]}">
+          </div>
         </div>
       `).join('');
 
@@ -1213,6 +1233,90 @@
       return state.gearCount === 2 && state.connections[0] === 'chain';
     }
 
+    function compoundMeshSpec(index) {
+      const finalShaft = state.gearCount - 1;
+      const driverTeeth = index === 0 ? state.teeth[0] : state.teeth[index];
+      const drivenTeeth = index + 1 === finalShaft ? state.teeth[index + 1] : state.compoundTeeth[index + 1];
+      return { driverTeeth, drivenTeeth };
+    }
+
+    function compoundGearLabel(shaftIndex, layer) {
+      if (shaftIndex === 0) return 'A';
+      if (shaftIndex === state.gearCount - 1) return GEAR_NAMES[shaftIndex];
+      return `${GEAR_NAMES[shaftIndex]}${layer === 'input' ? '1' : '2'}`;
+    }
+
+    function buildCompoundTopology(ratios = null, phases = null) {
+      const shaftCount = state.gearCount;
+      const meshCount = shaftCount - 1;
+      const planeZ = [-0.62, 0.62, -0.62];
+      const shafts = [];
+      const meshes = [];
+
+      for (let i = 0; i < shaftCount; i++) shafts.push({ index: i, name: GEAR_NAMES[i], x: 0, gears: [] });
+
+      shafts[0].gears.push({
+        role: 'single',
+        label: compoundGearLabel(0),
+        teeth: state.teeth[0],
+        z: planeZ[0],
+        color: GEAR_COLORS[0],
+        accent: ACCENT_COLORS[0],
+      });
+
+      for (let i = 1; i < shaftCount - 1; i++) {
+        shafts[i].gears.push({
+          role: 'input',
+          label: compoundGearLabel(i, 'input'),
+          teeth: state.compoundTeeth[i],
+          z: planeZ[i - 1],
+          color: 0xfde68a,
+          accent: ACCENT_COLORS[i],
+        });
+        shafts[i].gears.push({
+          role: 'output',
+          label: compoundGearLabel(i, 'output'),
+          teeth: state.teeth[i],
+          z: planeZ[i],
+          color: GEAR_COLORS[i],
+          accent: ACCENT_COLORS[i],
+        });
+      }
+
+      shafts[shaftCount - 1].gears.push({
+        role: 'single',
+        label: compoundGearLabel(shaftCount - 1),
+        teeth: state.teeth[shaftCount - 1],
+        z: planeZ[meshCount - 1],
+        color: GEAR_COLORS[shaftCount - 1],
+        accent: ACCENT_COLORS[shaftCount - 1],
+      });
+
+      let x = 0;
+      shafts[0].x = x;
+      for (let i = 0; i < meshCount; i++) {
+        const { driverTeeth, drivenTeeth } = compoundMeshSpec(i);
+        const z = planeZ[i];
+        const distance = pitchRadius(driverTeeth) + pitchRadius(drivenTeeth) + 0.08;
+        x += distance;
+        shafts[i + 1].x = x;
+        meshes.push({ index: i, from: i, to: i + 1, driverTeeth, drivenTeeth, z });
+      }
+
+      const minX = Math.min(...shafts.map((shaft) => shaft.x - Math.max(...shaft.gears.map((gear) => pitchRadius(gear.teeth))) - 1.4));
+      const maxX = Math.max(...shafts.map((shaft) => shaft.x + Math.max(...shaft.gears.map((gear) => pitchRadius(gear.teeth))) + 1.4));
+      const shift = -(minX + maxX) / 2;
+      shafts.forEach((shaft, index) => {
+        shaft.x += shift;
+        shaft.position = new THREE.Vector3(shaft.x, 0, 0);
+        shaft.ratio = ratios ? ratios[index] : 1;
+        shaft.phase = phases ? phases[index] : 0;
+      });
+
+      const maxRadius = Math.max(...shafts.flatMap((shaft) => shaft.gears.map((gear) => pitchRadius(gear.teeth))));
+      return { shafts, meshes, maxRadius };
+    }
+
     function computeRatios() {
       const teeth = activeTeeth();
       const conns = activeConnections();
@@ -1222,15 +1326,15 @@
 
       for (let i = 0; i < conns.length; i++) {
         const direction = conns[i] === 'mesh' ? -1 : 1;
-        const driveTeeth = teeth[i];
-        const drivenTeeth = state.compoundMode ? state.compoundTeeth[i + 1] : teeth[i + 1];
+        const meshSpec = state.compoundMode ? compoundMeshSpec(i) : { driverTeeth: teeth[i], drivenTeeth: teeth[i + 1] };
+        const { driverTeeth, drivenTeeth } = meshSpec;
         if (conns[i] === 'mesh') meshFlipCount += 1;
-        ratios[i + 1] = ratios[i] * direction * driveTeeth / drivenTeeth;
+        ratios[i + 1] = ratios[i] * direction * driverTeeth / drivenTeeth;
 
         if (conns[i] === 'mesh') {
-          phases[i + 1] = -phases[i] * driveTeeth / drivenTeeth + Math.PI - Math.PI / drivenTeeth;
+          phases[i + 1] = -phases[i] * driverTeeth / drivenTeeth + Math.PI - Math.PI / drivenTeeth;
         } else {
-          phases[i + 1] = phases[i] * driveTeeth / drivenTeeth;
+          phases[i + 1] = phases[i] * driverTeeth / drivenTeeth;
         }
       }
 
@@ -1267,9 +1371,14 @@
       const plate = makeBackPlate();
       world.add(plate);
 
+      if (state.compoundMode) {
+        rebuildCompoundWorld();
+        return;
+      }
+
       const teeth = activeTeeth();
       const conns = activeConnections();
-      const radii = teeth.map((tooth, index) => pitchRadius(Math.max(tooth, state.compoundMode && index > 0 && index < state.gearCount ? state.compoundTeeth[index] : tooth)));
+      const radii = teeth.map((tooth) => pitchRadius(tooth));
       const positions = [];
       let x = 0;
       positions.push(new THREE.Vector3(x, 0, 0));
@@ -1293,20 +1402,7 @@
           color: GEAR_COLORS[i],
           accent: ACCENT_COLORS[i],
         });
-        gear.position.z = state.compoundMode && i > 0 ? -0.44 : 0;
         shaft.add(gear);
-
-        if (state.compoundMode && i > 0 && i < state.gearCount) {
-          const upper = createGear({
-            name: `${GEAR_NAMES[i]}上`,
-            teeth: state.compoundTeeth[i],
-            color: 0xfde68a,
-            accent: ACCENT_COLORS[i],
-          });
-          upper.scale.setScalar(0.92);
-          upper.position.z = 0.58;
-          shaft.add(upper);
-        }
 
         world.add(shaft);
         state.gears.push(shaft);
@@ -1337,6 +1433,57 @@
 
       const maxR = Math.max(...radii);
       fitCamera({ minX: Math.min(...positions.map((p, i) => p.x - radii[i] - 2.5)), maxX: Math.max(...positions.map((p, i) => p.x + radii[i] + 2.5)), minY: -maxR - 4.2, maxY: maxR + 5.2 });
+
+      applyVisibilityToggles();
+      updateReadout();
+      applyGearAngles();
+    }
+
+    function rebuildCompoundWorld() {
+      const { ratios, phases } = computeRatios();
+      const topology = buildCompoundTopology(ratios, phases);
+      const shaftRadius = [];
+
+      topology.shafts.forEach((shaftSpec) => {
+        const shaft = new THREE.Group();
+        shaft.position.copy(shaftSpec.position);
+        shaftSpec.gears.forEach((gearSpec) => {
+          const gear = createGear({
+            name: gearSpec.label,
+            teeth: gearSpec.teeth,
+            color: gearSpec.color,
+            accent: gearSpec.accent,
+          });
+          gear.position.z = gearSpec.z;
+          shaft.add(gear);
+        });
+        world.add(shaft);
+        state.gears.push(shaft);
+
+        const maxRadius = Math.max(...shaftSpec.gears.map((gear) => pitchRadius(gear.teeth)));
+        shaftRadius[shaftSpec.index] = maxRadius;
+        addDomLabel({
+          type: 'gear',
+          key: shaftSpec.index,
+          className: 'gear-id-label',
+          position: new THREE.Vector3(shaftSpec.position.x, maxRadius + 0.78, 2.15),
+        });
+      });
+
+      topology.meshes.forEach((mesh) => {
+        addContactLine(
+          new THREE.Vector3(topology.shafts[mesh.from].position.x, 0, mesh.z + 0.36),
+          new THREE.Vector3(topology.shafts[mesh.to].position.x, 0, mesh.z + 0.36),
+          0x93c5fd
+        );
+      });
+
+      fitCamera({
+        minX: Math.min(...topology.shafts.map((shaft, i) => shaft.position.x - shaftRadius[i] - 2.5)),
+        maxX: Math.max(...topology.shafts.map((shaft, i) => shaft.position.x + shaftRadius[i] + 2.5)),
+        minY: -topology.maxRadius - 4.2,
+        maxY: topology.maxRadius + 5.2,
+      });
 
       applyVisibilityToggles();
       updateReadout();
@@ -1865,14 +2012,26 @@
       el.speedHead.innerHTML = showRatioDetails
         ? '<tr><th>歯車</th><th>歯数</th><th>倍率</th><th>回転数</th></tr>'
         : '<tr><th>歯車</th><th>歯数</th><th>回転数</th></tr>';
-      el.speedBody.innerHTML = teeth.map((tooth, i) => `
-        <tr>
-          <td>${GEAR_NAMES[i]} ${i === 0 ? '駆動' : i === finalIndex ? '被動' : '中間'}<br><span class="small-note">${directionText(rpms[i])}</span></td>
-          <td>${tooth}</td>
-          ${showRatioDetails ? `<td>${formatSignedRatio(ratios[i])}</td>` : ''}
-          <td>${formatRPM(Math.abs(rpms[i]))} rpm</td>
-        </tr>
-      `).join('');
+      if (state.compoundMode) {
+        const rows = [
+          `<tr><td>A 駆動歯車<br><span class="small-note">${directionText(rpms[0])}</span></td><td>${state.teeth[0]}</td>${showRatioDetails ? '<td>1倍</td>' : ''}<td>${formatRPM(Math.abs(rpms[0]))} rpm</td></tr>`
+        ];
+        for (let shaft = 1; shaft < finalIndex; shaft++) {
+          rows.push(`<tr><td>${GEAR_NAMES[shaft]}1 中央入力歯車<br><span class="small-note">${directionText(rpms[shaft])}</span></td><td>${state.compoundTeeth[shaft]}</td>${showRatioDetails ? `<td>${formatSignedRatio(ratios[shaft])}</td>` : ''}<td>${formatRPM(Math.abs(rpms[shaft]))} rpm</td></tr>`);
+          rows.push(`<tr><td>${GEAR_NAMES[shaft]}2 同軸出力歯車<br><span class="small-note">${directionText(rpms[shaft])}</span></td><td>${state.teeth[shaft]}</td>${showRatioDetails ? '<td>同じ軸</td>' : ''}<td>${formatRPM(Math.abs(rpms[shaft]))} rpm</td></tr>`);
+        }
+        rows.push(`<tr><td>${GEAR_NAMES[finalIndex]} 従動歯車<br><span class="small-note">${directionText(rpms[finalIndex])}</span></td><td>${state.teeth[finalIndex]}</td>${showRatioDetails ? `<td>総合 ${formatSignedRatio(finalRatio)}</td>` : ''}<td>${formatRPM(Math.abs(rpms[finalIndex]))} rpm</td></tr>`);
+        el.speedBody.innerHTML = rows.join('');
+      } else {
+        el.speedBody.innerHTML = teeth.map((tooth, i) => `
+          <tr>
+            <td>${GEAR_NAMES[i]} ${i === 0 ? '駆動' : i === finalIndex ? '被動' : '中間'}<br><span class="small-note">${directionText(rpms[i])}</span></td>
+            <td>${tooth}</td>
+            ${showRatioDetails ? `<td>${formatSignedRatio(ratios[i])}</td>` : ''}
+            <td>${formatRPM(Math.abs(rpms[i]))} rpm</td>
+          </tr>
+        `).join('');
+      }
 
       const maxVal = Math.max(1, finalAbs);
       const inputWidth = Math.max(5, (1 / maxVal) * 100);
@@ -1886,15 +2045,15 @@
         <div class="bar-row"><span>${GEAR_NAMES[finalIndex]}出力</span><div class="bar-track"><div class="bar-fill" style="width:${outputWidth}%"></div></div><span>${formatRatioNumber(finalAbs)}倍</span></div>
       `;
 
-      const connSummary = conns.map((c, i) => state.compoundMode ? `${GEAR_NAMES[i]}下段${state.teeth[i]}歯 → ${GEAR_NAMES[i + 1]}上段${state.compoundTeeth[i + 1]}歯` : `${GEAR_NAMES[i]}→${GEAR_NAMES[i + 1]}：${c === 'mesh' ? '噛み合い/逆' : 'チェーン/同'}`).join('　');
+      const connSummary = conns.map((c, i) => state.compoundMode ? `${GEAR_NAMES[i]}${i === 0 ? '' : '下段'}${state.teeth[i]}歯 → ${GEAR_NAMES[i + 1]}${i + 1 === state.gearCount - 1 ? '' : '上段'}${i + 1 === state.gearCount - 1 ? state.teeth[i + 1] : state.compoundTeeth[i + 1]}歯` : `${GEAR_NAMES[i]}→${GEAR_NAMES[i + 1]}：${c === 'mesh' ? '噛み合い/逆' : 'チェーン/同'}`).join('　');
       el.formulaBox.style.display = showRatioDetails ? 'block' : 'none';
       el.infoHints.style.display = showRatioDetails ? 'block' : 'none';
       el.formulaBox.innerHTML = state.compoundMode ? `
         <strong>二段歯車の関係式</strong><br>
-        2〜4枚目では上段の被動歯車と下段歯車が同じ回転数で回り、その下段歯車が次の軸の上段歯車を回します。<br>
-        各段では <code>次のrpm = 前のrpm × 前の下段歯数 ÷ 次の上段歯数</code>。<br>
+        各中央軸では、入力側歯車（B1/C1）と出力側歯車（B2/C2）が同じ中心座標に固定され、同じ回転数・同じ向きで回ります。<br>
+        2段では <code>rpmC = rpmA × (A歯数 ÷ B1歯数) × (B2歯数 ÷ C歯数)</code>、3段では各噛み合いの歯数比をさらに掛けます。<br>
         この構成：${connSummary}<br>
-        倍率が段ごとに掛け算されるため、段数を増やすほど大きく増速・減速できます。最終出力はAと<strong>${finalRatio >= 0 ? '同じ向き' : '逆向き'}</strong>です。
+        倍率は噛み合いごとに掛け合わせ、同軸部分では変化しません。最終出力はAと<strong>${finalRatio >= 0 ? '同じ向き' : '逆向き'}</strong>です。
       ` : `
         <strong>関係式</strong><br>
         隣り合う接続では <code>次のrpm = 前のrpm × 前の歯数 ÷ 次の歯数</code>。<br>
@@ -1911,7 +2070,7 @@
       const conns = activeConnections();
       const items = [];
       for (let i = 0; i < conns.length; i++) {
-        items.push(state.compoundMode ? `${GEAR_NAMES[i]}下段 → ${GEAR_NAMES[i + 1]}上段` : `${GEAR_NAMES[i]}→${GEAR_NAMES[i + 1]} ${conns[i] === 'mesh' ? '噛み合い：逆回転' : 'チェーン：同方向'}`);
+        items.push(state.compoundMode ? `${GEAR_NAMES[i]}${i === 0 ? '' : '2'} → ${GEAR_NAMES[i + 1]}${i + 1 === state.gearCount - 1 ? '' : '1'}` : `${GEAR_NAMES[i]}→${GEAR_NAMES[i + 1]} ${conns[i] === 'mesh' ? '噛み合い：逆回転' : 'チェーン：同方向'}`);
       }
       const ratios = computeRatios().ratios;
       const final = ratios[state.gearCount - 1];
